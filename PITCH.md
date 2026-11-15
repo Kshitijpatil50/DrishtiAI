@@ -1,24 +1,27 @@
 # Drishti AI — Solution Pitch
 
-**Built for the Gnani AI Hackathon** · Voice-First Visual Assistant for Blind & Low-Vision Users
+**Gnani AI Hackathon Submission** · *Voice-First Multimodal Vision Guide for Blind & Low-Vision Users*
+**Live App:** https://ais-pre-u3yx2mmipfypvnj7c6t5ze-782659439587.asia-southeast1.run.app
 
 ---
 
 ### The Problem
-Over 250 million people worldwide live with moderate-to-severe visual impairment, with a disproportionate share in India navigating crowded streets, stairs, doorways, and daily printed text in **English, Hindi, and Marathi**. Most vision apps today still require sighted-style touch navigation, wait silently until prompted, forget what the camera saw seconds earlier, or speak in robotic English voices that miss local Indian languages and code-mixed speech.
+Blind and low-vision users across India navigate unfamiliar spaces, stairs, doorways, and printed labels using accessibility apps that fail in three critical ways:
+1. **Menu-heavy, reactive UX**: Requiring sighted screen taps instead of proactive, eyes-free hazard warnings.
+2. **Visual amnesia**: Answering only the current frame—forgetting an exit, staircase, or object seen seconds earlier.
+3. **English-only, robotic speech**: Breaking down on **Hindi, Marathi, Indian English, and code-mixed** natural speech.
 
 ### The Solution
-**Drishti AI** turns any smartphone camera and microphone into a calm, hands-free Indian companion. Using live multimodal vision and **Gnani AI's Prisma v3.0 STT + Timbre v3.0 TTS (Shivani voice)**, Drishti proactively warns users about hazards in real time, answers spoken questions in the exact language asked (**English, Hindi, or Marathi**), and remembers recent camera frames to guide users back to objects or exits they walked past seconds ago.
+**Drishti AI** turns any smartphone camera and microphone into a calm, hands-free Indian companion. Point the camera ahead and Drishti proactively warns about hazards first, answers spoken questions in **English, Hindi, or Marathi**, and recalls recent camera frames to guide users back to objects or paths they passed moments ago.
 
-### Why Gnani AI
-- **Multilingual Code-Mixed Understanding (`Prisma v3.0`)**: Accurately transcribes natural Indian English, Hindi, and Marathi—even when speakers mix English nouns into Hindi or Marathi sentences.
-- **Warm, Natural Indian Voice (`Timbre v3.0 — Shivani`)**: Speaks concise, number-normalized, conversational guidance with low latency, instant barge-in cancellation, and hazard-priority queuing.
+### Built Around Gnani Prisma v3.0 & Timbre v3.0
+Rather than treating voice as an afterthought, Drishti's architecture is engineered specifically around Gnani's speech stack:
+- **Multilingual Code-Mixed STT (`Gnani Prisma v3.0`)**: Captures natural Indian English, Hindi, and Marathi (`format: "codemix"`, `mr-IN,hi-IN,en-IN` / `hi-IN,en-IN,mr-IN`) via a custom `AudioWorklet` Voice Activity Detector with a **400ms pre-roll buffer** so opening syllables are never clipped.
+- **Expressive Indian TTS (`Gnani Timbre v3.0 — Shivani`)**: Speaks concise guidance through a **trilingual digit-to-word sanitizer** (converting English, Hindi, and Marathi numbers and decimals into natural spoken words) with sentence batching for crisp pacing.
+- **Concurrency & Hazard-Priority Queuing**: Dual client/server serial queues enforce Gnani single-flight execution, allow **hazard alerts to preempt routine narration**, and apply barge-in abort cooldowns so interruptions stay fast and reliable.
 
-### Core Capabilities
-1. **Proactive Hazard-First Narration**: Monitors camera frame changes (`450ms` visual loop) and immediately alerts on stairs, drops, obstacles, wet floors, or approaching people before routine scenery.
-2. **Visual Whereabouts Memory**: Retains recent distinct keyframes with timestamps so questions like *"Where did I pass the stairs?"* or *"माझी चावी कुठे दिसली?"* locate items seen earlier.
-3. **Hands-Free Barge-In & Strict Same-Language Replies**: Speak anytime—even mid-sentence—to interrupt Drishti (`AudioWorklet` VAD + `400ms` pre-roll) and receive a response strictly in the language of your question.
-4. **Zero-Clutter Accessibility**: Single-tap push-to-talk, double-tap Quiet Mode toggle, accessible live captions, and haptic hazard alerts.
-
-### Impact
-Drishti AI bridges real-time computer vision and vernacular Indian voice AI so blind and low-vision users can navigate unfamiliar spaces, read medicine labels or signs, and recover misplaced objects independently—hands-free and in their own language.
+### Key Differentiators
+- **Proactive Hazard-First Loop**: Thumbnail-difference tracking triggers Gemini Vision only on meaningful scene shifts, speaking obstacles/stairs first alongside haptic vibration.
+- **Short-Term Visual Frame Memory**: Buffers distinct recent frames with timestamps so whereabouts questions (*"Where did we pass the stairs?"* / *"पायऱ्या कुठे होत्या?"*) locate items seen moments earlier.
+- **Strict Same-Language Answers**: Transcript-first language resolution + anti-drift server rules ensure English questions get English replies, Hindi gets Hindi, and Marathi gets Marathi—even across mixed-language turns.
+- **True Barge-In & Accessible Controls**: Speak mid-sentence (with acoustic echo suppression) or tap anywhere to interrupt, double-tap for Quiet Mode, and view high-contrast live captions—backed by **65 automated unit tests**.

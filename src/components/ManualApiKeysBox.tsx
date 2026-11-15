@@ -109,21 +109,17 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
           </h2>
         </div>
 
-        <span
-          className={`text-[10px] font-medium px-1.5 py-0.5 border rounded-[4px] shrink-0 ${
-            hasSavedBoth
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : hasSavedAny
-              ? 'bg-amber-50 text-amber-800 border-amber-200'
-              : 'bg-[#FCF7F2] text-muted border-line'
-          }`}
-        >
-          {hasSavedBoth
-            ? '2/2 saved'
-            : hasSavedAny
-            ? '1/2 saved'
-            : 'Hosted mode'}
-        </span>
+        {hasSavedAny && (
+          <span
+            className={`text-[10px] font-medium px-1.5 py-0.5 border rounded-[4px] shrink-0 ${
+              hasSavedBoth
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-amber-50 text-amber-800 border-amber-200'
+            }`}
+          >
+            {hasSavedBoth ? '2/2 saved' : '1/2 saved'}
+          </span>
+        )}
       </div>
 
       <p className="mt-2 text-[11px] text-muted leading-snug">

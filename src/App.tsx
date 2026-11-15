@@ -17,9 +17,9 @@ import {
   VisionTracker,
   captureVideoThumbnail,
   encodeVideoFrameBase64,
-  createSimulatedMediaStream,
   getFallbackFrameBase64,
 } from './vision/frames';
+import { acquireRearCameraStream } from './vision/camera';
 import { VisualFrameMemory } from './vision/memory';
 import { bytesToBase64 } from './audio/wav';
 import { Eye, Send, Activity } from 'lucide-react';
@@ -643,31 +643,8 @@ export default function App() {
       setHasStarted(true);
       await requestWakeLock();
 
-      // Request rear camera and microphone (or fallback in simulated/headless environment)
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-      } catch {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true,
-          });
-        } catch {
-          stream = createSimulatedMediaStream();
-        }
-      }
+      // Request rear/back camera and microphone (or fallback in simulated/headless environment)
+      const stream = await acquireRearCameraStream();
 
       mediaStreamRef.current = stream;
 
