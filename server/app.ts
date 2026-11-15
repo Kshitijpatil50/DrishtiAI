@@ -17,6 +17,13 @@ import {
   QUESTION_MODELS,
   generateContentWithFallback,
 } from './geminiFallback.js';
+import {
+  type LanguageCode,
+  normalizeLang,
+  getLanguageDisplayName,
+  detectQuestionLanguage,
+  resolveQuestionLanguage,
+} from './language.js';
 
 dotenv.config();
 
@@ -132,19 +139,9 @@ function getGenAIClient(apiKey: string): GoogleGenAI {
   return cachedAiClient;
 }
 
-type LanguageCode = 'en' | 'hi' | 'mr';
-
-function normalizeLang(value: unknown, fallback: LanguageCode = 'en'): LanguageCode {
-  if (typeof value !== 'string') return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'mr' || normalized.startsWith('mr-') || normalized === 'marathi') return 'mr';
-  if (normalized === 'hi' || normalized.startsWith('hi-') || normalized === 'hindi') return 'hi';
-  if (normalized === 'en' || normalized.startsWith('en-') || normalized === 'english') return 'en';
-  return fallback;
-}
-
-const SYSTEM_INSTRUCTION_TEMPLATE = `You are Drishti, a warm, calm, attentive human-sounding voice guide helping a blind person see and navigate with their phone camera. Speak in {LANG} (en = natural, friendly Indian English with everyday contractions like "there's" and "it's"; hi = warm everyday spoken Hindi in Devanagari, feminine first person; mr = warm, natural everyday spoken Marathi in Devanagari, feminine first person).
+const SYSTEM_INSTRUCTION_TEMPLATE = `You are Drishti, a warm, calm, attentive human-sounding voice guide helping a blind person see and navigate with their phone camera. Speak strictly in {LANG} (en = natural, friendly Indian English with everyday contractions like "there's" and "it's"; hi = warm everyday spoken Hindi in Devanagari script, feminine first person; mr = warm, natural everyday spoken Marathi in Devanagari script, feminine first person).
 Since your reply is spoken aloud by a human voice: write short, flowing sentences as you would naturally say them in conversation — zero markdown, no lists, no emojis, write small numbers as words.
+CRITICAL LANGUAGE MATCHING: Always reply strictly in the exact language of the user's CURRENT question (English question -> English answer; Hindi question -> Hindi Devanagari answer; Marathi question -> Marathi Devanagari answer), regardless of what language earlier conversation turns used, unless the user explicitly asks you to switch to another language.
 CONVERSATION & FOLLOW-UPS: Pay attention to recent conversation turns so pronouns like "it", "that", "there", or "say that again" make immediate sense. If the user simply greets you, thanks you, or chats, answer warmly and naturally like a friend without forcing a camera rundown.
 VISUAL MEMORY & WHEREABOUTS: You may also receive earlier camera frames labeled with how many seconds ago they were seen. When the user asks where an object, landmark, door, exit, or way is, check BOTH the current live camera view AND those recent earlier frames. If it is in the current view, guide them directly. If it is not in the current view but appeared in an earlier frame, tell them clearly where it appeared relative to that view and roughly when (for example, "I saw the stairs to your left about twelve seconds ago, so try turning left"), without claiming it is directly ahead right now. If it is not in the current or recent frames, say so honestly and invite them to pan slowly.
 ANSWERING VISUAL QUESTIONS: Answer directly what was asked in one or two crisp, natural sentences from what you actually see. For text, labels, currency, medicine strips, or signs, read the exact words or value clearly. For distance or size, give an honest conversational estimate with "about" (e.g., "about two steps to your left"). If the view is blurry, dark, or cropped, say so gently and guide the camera ("tilt a little to your left so I can see better"). If asked to switch languages, switch cleanly and set "language".
@@ -328,7 +325,13 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
 
 // Answering User Question endpoint
 apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
-  const language: LanguageCode = normalizeLang(req.body?.language, 'en');
+  const { imageBase64, question, audioBase64, history = [], recentFrames = [] } = req.body || {};
+  const rawQuestion = typeof question === 'string' ? question.trim() : '';
+  const { effectiveLanguage: language, explicitSwitchTarget } = resolveQuestionLanguage({
+    rawQuestion,
+    requestedLanguage: req.body?.language,
+  });
+
   const clientAbort = new AbortController();
   const onClientClose = () => {
     if (!res.writableEnded) {
@@ -338,8 +341,7 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
   res.on('close', onClientClose);
 
   try {
-    const { imageBase64, question, audioBase64, history = [], recentFrames = [] } = req.body || {};
-    if (!question && !audioBase64) {
+    if (!rawQuestion && !audioBase64) {
       res.status(200).json({
         speech:
           language === 'mr'
@@ -373,7 +375,6 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
 
     const ai = getGenAIClient(apiKey);
 
-    const rawQuestion = (question || '').trim();
     const fallbackQuestion =
       language === 'mr'
         ? 'माझ्या समोर काय आहे?'
@@ -382,8 +383,13 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
         : 'What is in front of me?';
     const needsAudioTranscription = !rawQuestion && Boolean(audioBase64);
 
-    const langName = language;
-    const systemInstruction = SYSTEM_INSTRUCTION_TEMPLATE.replace('{LANG}', langName);
+    const langDisplay = getLanguageDisplayName(language);
+    const systemInstruction = needsAudioTranscription
+      ? SYSTEM_INSTRUCTION_TEMPLATE.replace(
+          '{LANG}',
+          `the exact language spoken by the user in their audio clip (English "en", Hindi "hi", or Marathi "mr"; default ${langDisplay} "${language}" only if unclear)`
+        )
+      : SYSTEM_INSTRUCTION_TEMPLATE.replace('{LANG}', `${langDisplay} (code "${language}")`);
 
     const sanitizedMemoryFrames = Array.isArray(recentFrames)
       ? recentFrames
@@ -442,9 +448,14 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
 
     const recentTurns = (history || []).slice(-4);
     const historyText = recentTurns.length > 0 ? `Recent conversation:\n${recentTurns.map((t: any) => `${t.role === 'user' ? 'User' : 'Drishti'}: ${t.text}`).join('\n')}\n` : '';
+    const languageDirective = explicitSwitchTarget
+      ? `LANGUAGE RULE: The user explicitly asked to respond in ${langDisplay}. Write JSON "speech" in ${langDisplay} and set JSON "language" to "${language}".`
+      : `MANDATORY LANGUAGE RULE: The user's current question is in ${langDisplay}. You MUST write JSON "speech" strictly in ${langDisplay} and set JSON "language" to "${language}". Do NOT answer in any other language even if earlier conversation turns used another language.`;
+
     const promptWithHistory = needsAudioTranscription
-      ? `${historyText}Listen to the user's voice clip (English, Hindi, or Marathi), put their words in JSON "question" (or "${fallbackQuestion}" if unclear), and respond naturally in one or two short spoken sentences in JSON "speech", checking both the live camera view and recent earlier frames if they ask where something or a path is.`
-      : `${historyText}User says: "${rawQuestion || fallbackQuestion}"
+      ? `${historyText}Listen carefully to the user's voice clip (English, Hindi, or Marathi). Put their exact words in JSON "question" in the language they spoke (or "${fallbackQuestion}" if unclear). MANDATORY LANGUAGE RULE: Detect which language they spoke in the clip (English="en", Hindi="hi", Marathi="mr"), set JSON "language" to that exact code, and write JSON "speech" strictly in THAT SAME spoken language (never switch to another language from earlier turns unless they asked to switch). Respond naturally in one or two short spoken sentences, checking both the live camera view and recent earlier frames if they ask where something or a path is.`
+      : `${historyText}User's current question: "${rawQuestion || fallbackQuestion}"
+${languageDirective}
 ${
   imageBase64
     ? 'Respond naturally and directly in one or two short spoken sentences, checking the current live camera view first and the recent earlier frames whenever they ask where an object, landmark, or way is.'
@@ -511,13 +522,21 @@ ${
       (typeof parsed.question === 'string' && parsed.question.trim()
         ? parsed.question.trim()
         : fallbackQuestion);
+    const resolvedSpeech =
+      typeof parsed.speech === 'string' && parsed.speech.trim()
+        ? parsed.speech
+        : defaultUnclearSpeech;
+    const responseLanguage: LanguageCode =
+      needsAudioTranscription
+        ? detectQuestionLanguage(
+            resolvedSpeech,
+            detectQuestionLanguage(resolvedQuestion, normalizeLang(parsed.language, language))
+          )
+        : language;
 
     res.json({
-      speech:
-        typeof parsed.speech === 'string' && parsed.speech.trim()
-          ? parsed.speech
-          : defaultUnclearSpeech,
-      language: normalizeLang(parsed.language, language),
+      speech: resolvedSpeech,
+      language: responseLanguage,
       question: resolvedQuestion,
     });
   } catch (err: any) {

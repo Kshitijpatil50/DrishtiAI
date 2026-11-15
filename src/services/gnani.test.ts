@@ -75,5 +75,21 @@ test('Marathi STT language code building and language resolution', () => {
     resolveSttDetectedLanguage({ detected_language_code: 'hi-IN' }, 'मेरे सामने क्या है', 'mr'),
     'hi'
   );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'mr-IN' }, 'What is in front of me?', 'mr'),
+    'en'
+  );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'hi-IN' }, 'Where is the door?', 'hi'),
+    'en'
+  );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'en-IN' }, 'माझ्या समोर काय आहे?', 'en'),
+    'mr'
+  );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'mr-IN' }, 'दरवाजा', 'en'),
+    'mr'
+  );
 });
 

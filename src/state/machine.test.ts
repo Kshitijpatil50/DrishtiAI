@@ -111,5 +111,10 @@ test('detectTextLanguage distinguishes Marathi and Hindi Devanagari and preserve
   assert.equal(detectTextLanguage('दरवाजा', 'mr'), 'mr');
   assert.equal(detectTextLanguage('दरवाजा', 'en'), 'hi');
   assert.equal(detectTextLanguage('What is ahead?', 'mr'), 'en');
+  assert.equal(detectTextLanguage('What does नमस्ते mean?', 'mr'), 'en');
+  assert.equal(detectTextLanguage('मेरा laptop कहाँ है?', 'en'), 'hi');
+  assert.equal(detectTextLanguage('Mere samne kya hai?', 'en'), 'hi');
+  assert.equal(detectTextLanguage('Mazya samor kay aahe?', 'en'), 'mr');
+  assert.equal(detectTextLanguage('Where is my chai?', 'hi'), 'en');
 });
 

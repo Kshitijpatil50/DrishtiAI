@@ -176,11 +176,11 @@ export default function App() {
   /**
    * Speak error message and display it
    */
-  const speakAndShowError = useCallback(async (message: string) => {
+  const speakAndShowError = useCallback(async (message: string, langOverride?: LanguageCode) => {
     setErrorMessage(message);
     const token = assistantRef.current.requestToken;
     const played = await audioPlayerRef.current?.speak(message, {
-      lang: assistantRef.current.language,
+      lang: langOverride || assistantRef.current.language,
       requestToken: token,
     });
     if (!played && assistantRef.current.requestToken === token) {
@@ -370,7 +370,14 @@ export default function App() {
         transcript = cleanFallback;
         detectedLang = detectTextLanguage(transcript, detectedLang);
       } else if (err instanceof GnaniError && (err.status === 401 || err.status === 402 || err.status === 403)) {
-        speakAndShowError("My voice service isn't accepting the key.");
+        speakAndShowError(
+          pickLang(detectedLang, {
+            en: "My voice service isn't accepting the key.",
+            hi: 'मेरी वॉइस सेवा कुंजी स्वीकार नहीं कर रही है।',
+            mr: 'माझी व्हॉइस सेवा की स्वीकारत नाही आहे.',
+          }),
+          detectedLang
+        );
         return;
       }
     }
@@ -477,6 +484,7 @@ export default function App() {
       lastSpokenPhraseRef.current = displayAnswer;
       setAssistant((prev) => ({
         ...prev,
+        language: replyLang,
         lastTranscript: finalQuestion,
         lastSpokenText: displayAnswer,
       }));
@@ -494,11 +502,12 @@ export default function App() {
       if (err.name !== 'AbortError') {
         console.error('Answer question error:', err);
         speakAndShowError(
-          pickLang(assistantRef.current.language, {
+          pickLang(detectedLang, {
             en: "I couldn't answer that right now. Please try again.",
             hi: 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।',
             mr: 'माफ करा, मी आत्ता उत्तर देऊ शकत नाही. कृपया पुन्हा विचारा.',
-          })
+          }),
+          detectedLang
         );
       }
     }
@@ -536,8 +545,8 @@ export default function App() {
       const abortController = new AbortController();
       geminiAbortRef.current = abortController;
 
+      const questionLang = detectTextLanguage(q, assistantRef.current.language);
       try {
-        const lang = detectTextLanguage(q, assistantRef.current.language);
         const recentMemoryFrames = frameMemoryRef.current.selectFramesForQuestion(
           Date.now(),
           capturedFrame.thumb,
@@ -547,7 +556,7 @@ export default function App() {
           q,
           imageBase64,
           conversationHistoryRef.current,
-          lang,
+          questionLang,
           abortController.signal,
           undefined,
           recentMemoryFrames
@@ -556,7 +565,7 @@ export default function App() {
         if (assistantRef.current.requestToken !== currentToken) return;
 
         const answerText = questionRes.speech.trim();
-        const replyLang = questionRes.language || lang;
+        const replyLang = questionRes.language || questionLang;
 
         conversationHistoryRef.current = [
           ...conversationHistoryRef.current.slice(-5),
@@ -584,11 +593,12 @@ export default function App() {
         if (err.name !== 'AbortError') {
           console.error('Answer direct question error:', err);
           speakAndShowError(
-            pickLang(assistantRef.current.language, {
+            pickLang(questionLang, {
               en: "I couldn't answer that right now. Please try again.",
               hi: 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।',
               mr: 'माफ करा, मी आत्ता उत्तर देऊ शकत नाही. कृपया पुन्हा विचारा.',
-            })
+            }),
+            questionLang
           );
         }
       }

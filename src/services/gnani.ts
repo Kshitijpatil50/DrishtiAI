@@ -164,9 +164,11 @@ export function resolveSttDetectedLanguage(
     data?.detected_language_code || data?.language_code,
     preferredLanguage
   );
-  if (apiLang === 'mr') return 'mr';
-  if (transcript) {
-    return detectTextLanguage(transcript, apiLang === 'hi' && preferredLanguage === 'mr' ? 'mr' : apiLang);
+  const trimmedTranscript = transcript.trim();
+  if (trimmedTranscript) {
+    const devanagariFallback: LanguageCode =
+      apiLang === 'mr' || (apiLang === 'hi' && preferredLanguage === 'mr') ? 'mr' : apiLang;
+    return detectTextLanguage(trimmedTranscript, devanagariFallback);
   }
   return apiLang;
 }
