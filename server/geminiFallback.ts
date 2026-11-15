@@ -6,7 +6,7 @@
 import { ThinkingLevel } from '@google/genai';
 
 export const SCENE_MODELS = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'] as const;
-export const QUESTION_MODELS = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'] as const;
+export const QUESTION_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'] as const;
 
 export interface ModelFallbackCache {
   scene: string | null;
@@ -74,9 +74,9 @@ export async function generateContentWithFallback(
   options: FallbackOptions = {}
 ) {
   const {
-    totalBudgetMs = 20000,
-    attemptTimeoutMs = 12000,
-    hedgeDelayMs = 3500,
+    totalBudgetMs = 32000,
+    attemptTimeoutMs = 22000,
+    hedgeDelayMs = 2500,
     models = QUESTION_MODELS,
     hedge = true,
     cacheKey = 'question',

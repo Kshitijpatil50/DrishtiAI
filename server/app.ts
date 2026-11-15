@@ -285,8 +285,8 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
         },
       },
       {
-        totalBudgetMs: 14000,
-        attemptTimeoutMs: 8000,
+        totalBudgetMs: 18000,
+        attemptTimeoutMs: 11000,
         models: SCENE_MODELS,
         hedge: false,
         cacheKey: 'scene',
@@ -464,45 +464,98 @@ ${
 
     parts.push({ text: promptWithHistory });
 
-    const response = await generateContentWithFallback(
-      ai,
-      {
-        contents: [
-          {
-            role: 'user',
-            parts,
+    const questionConfig = {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          speech: {
+            type: Type.STRING,
           },
-        ],
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              speech: {
-                type: Type.STRING,
-              },
-              language: {
-                type: Type.STRING,
-              },
-              question: {
-                type: Type.STRING,
-              },
-            },
-            required: ['speech', 'language'],
+          language: {
+            type: Type.STRING,
+          },
+          question: {
+            type: Type.STRING,
           },
         },
+        required: ['speech', 'language'],
       },
-      {
-        totalBudgetMs: 20000,
-        attemptTimeoutMs: 12000,
-        hedgeDelayMs: 3500,
-        models: QUESTION_MODELS,
-        hedge: true,
-        cacheKey: 'question',
-        signal: clientAbort.signal,
+    };
+
+    let response: any;
+    try {
+      response = await generateContentWithFallback(
+        ai,
+        {
+          contents: [
+            {
+              role: 'user',
+              parts,
+            },
+          ],
+          config: questionConfig,
+        },
+        {
+          totalBudgetMs: 32000,
+          attemptTimeoutMs: 22000,
+          hedgeDelayMs: 2500,
+          models: QUESTION_MODELS,
+          hedge: true,
+          cacheKey: 'question',
+          signal: clientAbort.signal,
+        }
+      );
+    } catch (primaryErr: any) {
+      const msg = String(primaryErr?.message || '');
+      const canRetryLean =
+        sanitizedMemoryFrames.length > 0 &&
+        Boolean(imageBase64) &&
+        !clientAbort.signal.aborted &&
+        primaryErr?.name !== 'AbortError' &&
+        !/api[_\s-]?key|permission_denied|unauthorized|\b401\b|\b403\b/i.test(msg);
+
+      if (!canRetryLean) {
+        throw primaryErr;
       }
-    );
+
+      console.warn('Retrying /api/gemini/question with live frame only after multi-frame failure:', msg);
+      const leanParts: any[] = [
+        {
+          inlineData: {
+            mimeType: imageBase64.startsWith('iVBOR') ? 'image/png' : 'image/jpeg',
+            data: imageBase64,
+          },
+        },
+      ];
+      if (needsAudioTranscription && audioBase64) {
+        leanParts.push({
+          inlineData: {
+            mimeType: 'audio/wav',
+            data: audioBase64,
+          },
+        });
+      }
+      leanParts.push({ text: promptWithHistory });
+
+      response = await generateContentWithFallback(
+        ai,
+        {
+          contents: [{ role: 'user', parts: leanParts }],
+          config: questionConfig,
+        },
+        {
+          totalBudgetMs: 16000,
+          attemptTimeoutMs: 12000,
+          hedgeDelayMs: 2000,
+          models: QUESTION_MODELS,
+          hedge: true,
+          cacheKey: 'question',
+          signal: clientAbort.signal,
+        }
+      );
+    }
 
     if (res.writableEnded || clientAbort.signal.aborted) return;
 

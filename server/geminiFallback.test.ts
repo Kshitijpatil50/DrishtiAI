@@ -25,7 +25,7 @@ test('buildModelRequest applies MINIMAL thinking to flash-lite and LOW to gemini
   assert.equal(flash4Req.config.thinkingConfig.thinkingLevel, ThinkingLevel.LOW);
 });
 
-test('generateContentWithFallback falls back via hedge to gemini-4-hydrogen when primary stalls beyond 5s', async () => {
+test('generateContentWithFallback falls back via hedge to gemini-3.1-flash-lite when primary stalls beyond 5s', async () => {
   const calls: string[] = [];
   const cache: ModelFallbackCache = { scene: null, question: null };
 
@@ -39,7 +39,7 @@ test('generateContentWithFallback falls back via hedge to gemini-4-hydrogen when
             () => {
               resolve({ text: JSON.stringify({ speech: `ok from ${req.model}`, language: 'en' }) });
             },
-            req.model === 'gemini-3.1-flash-lite' ? 6000 : 40
+            req.model === 'gemini-4-hydrogen' ? 6000 : 40
           );
           signal?.addEventListener(
             'abort',
@@ -67,9 +67,9 @@ test('generateContentWithFallback falls back via hedge to gemini-4-hydrogen when
     }
   );
 
-  assert.equal(JSON.parse(res.text).speech, 'ok from gemini-4-hydrogen');
-  assert.deepEqual(calls, ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']);
-  assert.equal(cache.question, 'gemini-4-hydrogen');
+  assert.equal(JSON.parse(res.text).speech, 'ok from gemini-3.1-flash-lite');
+  assert.deepEqual(calls, ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']);
+  assert.equal(cache.question, 'gemini-3.1-flash-lite');
 });
 
 test('generateContentWithFallback falls back if primary returns empty text', async () => {
@@ -77,7 +77,7 @@ test('generateContentWithFallback falls back if primary returns empty text', asy
   const fakeAi = {
     models: {
       generateContent: async (req: any) => {
-        if (req.model === 'gemini-3.1-flash-lite') {
+        if (req.model === 'gemini-4-hydrogen') {
           return { text: '   ' };
         }
         return { text: '{"speech":"Clear ahead","language":"en"}' };
@@ -100,5 +100,5 @@ test('generateContentWithFallback falls back if primary returns empty text', asy
   );
 
   assert.equal(JSON.parse(res.text).speech, 'Clear ahead');
-  assert.equal(cache.question, 'gemini-4-hydrogen');
+  assert.equal(cache.question, 'gemini-3.1-flash-lite');
 });

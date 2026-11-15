@@ -132,7 +132,7 @@ export class VisualFrameMemory {
     this.pruneExpired(now);
     if (this.entries.length === 0) return [];
 
-    const maxToSend = isWhereaboutsQuery(questionText) || !questionText.trim() ? 5 : 3;
+    const maxToSend = isWhereaboutsQuery(questionText) || !questionText.trim() ? 4 : 1;
 
     // Exclude frames that are virtually identical to the current live view or captured <1.5s ago
     const candidates = this.entries.filter((entry) => {
@@ -150,6 +150,8 @@ export class VisualFrameMemory {
     let chosen: VisualMemoryEntry[];
     if (candidates.length <= maxToSend) {
       chosen = candidates;
+    } else if (maxToSend === 1) {
+      chosen = [candidates[candidates.length - 1]];
     } else {
       chosen = [];
       const lastIdx = candidates.length - 1;

@@ -212,7 +212,8 @@ export default function App() {
     if (!frameBase64) return;
     lastValidFrameBase64Ref.current = frameBase64;
     if (frameMemoryRef.current.shouldCaptureFrame(thumbnail)) {
-      frameMemoryRef.current.recordFrame(frameBase64, thumbnail);
+      const memFrame = encodeVideoFrameBase64(videoRef.current, 256, 0.45) || frameBase64;
+      frameMemoryRef.current.recordFrame(memFrame, thumbnail);
     }
 
     visionTrackerRef.current.markProcessing(true);
@@ -281,7 +282,7 @@ export default function App() {
     const thumbnail = captureVideoThumbnail(videoRef.current);
     if (!thumbnail) return;
     if (!frameMemoryRef.current.shouldCaptureFrame(thumbnail)) return;
-    const frameBase64 = encodeVideoFrameBase64(videoRef.current, 320, 0.5);
+    const frameBase64 = encodeVideoFrameBase64(videoRef.current, 256, 0.45);
     if (!frameBase64) return;
     lastValidFrameBase64Ref.current = frameBase64;
     frameMemoryRef.current.recordFrame(frameBase64, thumbnail);

@@ -81,7 +81,7 @@ test('VisualFrameMemory enforces ring buffer capacity, TTL expiry, and chronolog
   assert.equal(selected[2].secondsAgo, 10);
 });
 
-test('VisualFrameMemory caps selected frames to 5 for whereabouts queries and 3 for general queries', () => {
+test('VisualFrameMemory caps selected frames to 4 for whereabouts queries and 1 for general queries', () => {
   const memory = new VisualFrameMemory({ maxFrames: 12, maxAgeMs: 120_000 });
   for (let i = 0; i < 8; i++) {
     memory.recordFrame(`frame-${i}`, makeThumb(i * 25), 10_000 + i * 3000);
@@ -93,14 +93,14 @@ test('VisualFrameMemory caps selected frames to 5 for whereabouts queries and 3 
     makeThumb(240),
     'Where was the chair?'
   );
-  assert.equal(whereaboutsFrames.length, 5);
+  assert.equal(whereaboutsFrames.length, 4);
   assert.equal(whereaboutsFrames[0].imageBase64, 'frame-0');
-  assert.equal(whereaboutsFrames[4].imageBase64, 'frame-7');
+  assert.equal(whereaboutsFrames[3].imageBase64, 'frame-7');
 
   const generalFrames = memory.selectFramesForQuestion(
     now,
     makeThumb(240),
     'Read this medicine label'
   );
-  assert.equal(generalFrames.length, 3);
+  assert.equal(generalFrames.length, 1);
 });
