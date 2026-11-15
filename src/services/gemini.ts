@@ -4,6 +4,7 @@
  */
 
 import { getActiveManualGeminiKey } from './manualKeys';
+import type { MemoryFramePayload } from '../vision/memory';
 
 // Model constant specified in single constant at the top
 export const GEMINI_MODEL = 'gemini-3.8-flash';
@@ -93,7 +94,8 @@ export async function answerQuestion(
   history: ConversationTurn[] = [],
   language: 'en' | 'hi' = 'en',
   signal?: AbortSignal,
-  audioBase64?: string
+  audioBase64?: string,
+  recentFrames: MemoryFramePayload[] = []
 ): Promise<QuestionResult> {
   const response = await fetch('/api/gemini/question', {
     method: 'POST',
@@ -104,6 +106,7 @@ export async function answerQuestion(
       history,
       language,
       audioBase64,
+      recentFrames,
     }),
     signal,
   });

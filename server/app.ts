@@ -148,6 +148,7 @@ const QUESTION_MODELS = [
 const SYSTEM_INSTRUCTION_TEMPLATE = `You are Drishti, a warm, calm, attentive human-sounding voice guide helping a blind person see and navigate with their phone camera. Speak in {LANG} (en = natural, friendly Indian English with everyday contractions like "there's" and "it's"; hi = warm everyday spoken Hindi in Devanagari, feminine first person).
 Since your reply is spoken aloud by a human voice: write short, flowing sentences as you would naturally say them in conversation — zero markdown, no lists, no emojis, write small numbers as words.
 CONVERSATION & FOLLOW-UPS: Pay attention to recent conversation turns so pronouns like "it", "that", "there", or "say that again" make immediate sense. If the user simply greets you, thanks you, or chats, answer warmly and naturally like a friend without forcing a camera rundown.
+VISUAL MEMORY & WHEREABOUTS: You may also receive earlier camera frames labeled with how many seconds ago they were seen. When the user asks where an object, landmark, door, exit, or way is, check BOTH the current live camera view AND those recent earlier frames. If it is in the current view, guide them directly. If it is not in the current view but appeared in an earlier frame, tell them clearly where it appeared relative to that view and roughly when (for example, "I saw the stairs to your left about twelve seconds ago, so try turning left"), without claiming it is directly ahead right now. If it is not in the current or recent frames, say so honestly and invite them to pan slowly.
 ANSWERING VISUAL QUESTIONS: Answer directly what was asked in one or two crisp, natural sentences from what you actually see. For text, labels, currency, medicine strips, or signs, read the exact words or value clearly. For distance or size, give an honest conversational estimate with "about" (e.g., "about two steps to your left"). If the view is blurry, dark, or cropped, say so gently and guide the camera ("tilt a little to your left so I can see better"). If asked to switch languages, switch cleanly and set "language".
 SCENE & SAFETY: Put any hazard first. Never promise a path is completely safe—use natural phrasing like "Looks clear right ahead, just keep using your cane." Never guess someone's identity; if unsure, say so honestly.`;
 
@@ -563,7 +564,7 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
   res.on('close', onClientClose);
 
   try {
-    const { imageBase64, question, audioBase64, history = [] } = req.body || {};
+    const { imageBase64, question, audioBase64, history = [], recentFrames = [] } = req.body || {};
     if (!question && !audioBase64) {
       res.status(200).json({
         speech: language === 'hi' ? 'कृपया अपना सवाल पूछिए।' : 'Please ask a question.',
@@ -598,8 +599,43 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     const langName = language === 'hi' ? 'hi' : 'en';
     const systemInstruction = SYSTEM_INSTRUCTION_TEMPLATE.replace('{LANG}', langName);
 
+    const sanitizedMemoryFrames = Array.isArray(recentFrames)
+      ? recentFrames
+          .filter(
+            (f: any) =>
+              f &&
+              typeof f.imageBase64 === 'string' &&
+              f.imageBase64.length > 0 &&
+              typeof f.secondsAgo === 'number'
+          )
+          .slice(-5)
+      : [];
+
     const parts: any[] = [];
+    if (sanitizedMemoryFrames.length > 0) {
+      parts.push({
+        text: 'Recent earlier camera frames (chronological visual memory, oldest to newest):',
+      });
+      for (const frame of sanitizedMemoryFrames) {
+        const mimeType = frame.imageBase64.startsWith('iVBOR') ? 'image/png' : 'image/jpeg';
+        const note =
+          typeof frame.narration === 'string' && frame.narration.trim()
+            ? ` — previously noted: "${frame.narration.trim()}"`
+            : '';
+        parts.push({ text: `[Earlier view, ${Math.max(1, Math.round(frame.secondsAgo))} seconds ago${note}]` });
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: frame.imageBase64,
+          },
+        });
+      }
+    }
+
     if (imageBase64) {
+      if (sanitizedMemoryFrames.length > 0) {
+        parts.push({ text: '[Current live camera view, right now]' });
+      }
       const mimeType = imageBase64.startsWith('iVBOR') ? 'image/png' : 'image/jpeg';
       parts.push({
         inlineData: {
@@ -621,11 +657,11 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     const recentTurns = (history || []).slice(-4);
     const historyText = recentTurns.length > 0 ? `Recent conversation:\n${recentTurns.map((t: any) => `${t.role === 'user' ? 'User' : 'Drishti'}: ${t.text}`).join('\n')}\n` : '';
     const promptWithHistory = needsAudioTranscription
-      ? `${historyText}Listen to the user's voice clip (English or Hindi), put their words in JSON "question" (or "${fallbackQuestion}" if unclear), and respond naturally in one or two short spoken sentences in JSON "speech", using the live camera view when their question is visual.`
+      ? `${historyText}Listen to the user's voice clip (English or Hindi), put their words in JSON "question" (or "${fallbackQuestion}" if unclear), and respond naturally in one or two short spoken sentences in JSON "speech", checking both the live camera view and recent earlier frames if they ask where something or a path is.`
       : `${historyText}User says: "${rawQuestion || fallbackQuestion}"
 ${
   imageBase64
-    ? 'Respond naturally and directly in one or two short spoken sentences, using the live camera view when answering anything visual.'
+    ? 'Respond naturally and directly in one or two short spoken sentences, checking the current live camera view first and the recent earlier frames whenever they ask where an object, landmark, or way is.'
     : 'Respond naturally in one or two short spoken sentences; if they asked about what is around them, gently ask them to point the camera ahead.'
 }`;
 

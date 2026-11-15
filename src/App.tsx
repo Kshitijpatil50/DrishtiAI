@@ -19,6 +19,7 @@ import {
   createSimulatedMediaStream,
   getFallbackFrameBase64,
 } from './vision/frames';
+import { VisualFrameMemory } from './vision/memory';
 import { bytesToBase64 } from './audio/wav';
 import { Eye, Send, Activity } from 'lucide-react';
 import { narrateScene, answerQuestion, ConversationTurn } from './services/gemini';
@@ -67,6 +68,7 @@ export default function App() {
   const audioCaptureRef = useRef<AudioCaptureService | null>(null);
   const audioPlayerRef = useRef<AudioPlayerService | null>(null);
   const visionTrackerRef = useRef<VisionTracker>(new VisionTracker());
+  const frameMemoryRef = useRef<VisualFrameMemory>(new VisualFrameMemory());
   const wakeLockRef = useRef<any>(null);
 
   // AbortController for in-flight Gemini requests
@@ -139,6 +141,7 @@ export default function App() {
       player.stopAll();
       audioCaptureRef.current?.stop();
       geminiAbortRef.current?.abort();
+      frameMemoryRef.current.reset();
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
@@ -195,6 +198,9 @@ export default function App() {
     const frameBase64 = encodeVideoFrameBase64(videoRef.current, 320, 0.5);
     if (!frameBase64) return;
     lastValidFrameBase64Ref.current = frameBase64;
+    if (frameMemoryRef.current.shouldCaptureFrame(thumbnail)) {
+      frameMemoryRef.current.recordFrame(frameBase64, thumbnail);
+    }
 
     visionTrackerRef.current.markProcessing(true);
     const currentToken = current.requestToken;
@@ -227,6 +233,7 @@ export default function App() {
       // Record narration thumbnail & add to conversational memory so follow-up questions have full context
       visionTrackerRef.current.markNarrationSpoken(thumbnail);
       const displayNarration = sanitizeForTTS(result.speech, result.language || current.language) || result.speech;
+      frameMemoryRef.current.annotateLatest(displayNarration);
       conversationHistoryRef.current = [
         ...conversationHistoryRef.current.slice(-5),
         { role: 'assistant', text: displayNarration },
@@ -253,23 +260,39 @@ export default function App() {
     }
   }, []);
 
-  // Vision Loop: Every 450ms while OBSERVING with immediate trigger on state entry
+  /**
+   * Captures distinct camera keyframes into visual memory even while speaking/quiet/listening
+   */
+  const recordVisualMemoryTick = useCallback(() => {
+    if (!videoRef.current) return;
+    const thumbnail = captureVideoThumbnail(videoRef.current);
+    if (!thumbnail) return;
+    if (!frameMemoryRef.current.shouldCaptureFrame(thumbnail)) return;
+    const frameBase64 = encodeVideoFrameBase64(videoRef.current, 320, 0.5);
+    if (!frameBase64) return;
+    lastValidFrameBase64Ref.current = frameBase64;
+    frameMemoryRef.current.recordFrame(frameBase64, thumbnail);
+  }, []);
+
+  // Vision Loop: Every 450ms record distinct keyframes and trigger proactive narration while OBSERVING
   useEffect(() => {
     if (!hasStarted) return;
 
+    recordVisualMemoryTick();
     // Immediately trigger narration check when entering OBSERVING
     if (assistant.state === 'OBSERVING' && !assistant.isQuiet) {
       executeSceneNarration();
     }
 
     const interval = setInterval(() => {
+      recordVisualMemoryTick();
       if (assistant.state === 'OBSERVING' && !assistant.isQuiet) {
         executeSceneNarration();
       }
     }, 450);
 
     return () => clearInterval(interval);
-  }, [hasStarted, assistant.state, assistant.isQuiet, executeSceneNarration]);
+  }, [hasStarted, assistant.state, assistant.isQuiet, executeSceneNarration, recordVisualMemoryTick]);
 
   /**
    * Captures current video frame + thumbnail pair for instant question answering.
@@ -399,13 +422,19 @@ export default function App() {
     geminiAbortRef.current = abortController;
 
     try {
+      const recentMemoryFrames = frameMemoryRef.current.selectFramesForQuestion(
+        Date.now(),
+        capturedFrame.thumb,
+        transcript
+      );
       const questionRes = await answerQuestion(
         transcript,
         imageBase64,
         conversationHistoryRef.current,
         detectedLang,
         abortController.signal,
-        audioBase64 || undefined
+        audioBase64 || undefined,
+        recentMemoryFrames
       );
 
       if (assistantRef.current.requestToken !== currentToken) return;
@@ -489,12 +518,19 @@ export default function App() {
       try {
         const isHindi = /[\u0900-\u097F]/.test(q);
         const lang = isHindi ? 'hi' : assistantRef.current.language;
+        const recentMemoryFrames = frameMemoryRef.current.selectFramesForQuestion(
+          Date.now(),
+          capturedFrame.thumb,
+          q
+        );
         const questionRes = await answerQuestion(
           q,
           imageBase64,
           conversationHistoryRef.current,
           lang,
-          abortController.signal
+          abortController.signal,
+          undefined,
+          recentMemoryFrames
         );
 
         if (assistantRef.current.requestToken !== currentToken) return;
