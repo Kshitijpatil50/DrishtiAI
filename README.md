@@ -1,6 +1,6 @@
 # Drishti AI
 
-# **[LIVE DEPLOYED APP: https://ais-pre-u3yx2mmipfypvnj7c6t5ze-782659439587.asia-southeast1.run.app](https://ais-pre-u3yx2mmipfypvnj7c6t5ze-782659439587.asia-southeast1.run.app)**
+# **[LIVE DEPLOYED APP: https://drishtiai-lyart.vercel.app/)**
 
 **A hands-free, multilingual voice-first camera companion for blind and low-vision users — powered by Gnani Prisma v3.0, Gnani Timbre v3.0 (Shivani), and Gemini Multimodal Vision.**
 
