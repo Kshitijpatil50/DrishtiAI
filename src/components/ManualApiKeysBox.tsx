@@ -13,10 +13,11 @@ import {
   setStoredGeminiKey,
   setStoredGnaniKey,
 } from '../services/manualKeys';
+import type { LanguageCode } from '../state/machine';
 
 interface ManualApiKeysBoxProps {
   compact?: boolean;
-  language?: 'en' | 'hi';
+  language?: LanguageCode;
   onKeysChanged?: () => void;
 }
 
@@ -53,13 +54,19 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
 
     if (nextGemini || nextGnani) {
       setStatusMessage(
-        language === 'hi'
+        language === 'mr'
+          ? 'एपीआई की या ब्राउझरमध्ये जतन केल्या आहेत.'
+          : language === 'hi'
           ? 'एपीआई की सहेजी गईं।'
           : 'API keys saved for this browser.'
       );
     } else {
       setStatusMessage(
-        language === 'hi' ? 'एपीआई की हटाई गईं।' : 'Manual API keys cleared.'
+        language === 'mr'
+          ? 'मॅन्युअल एपीआई की काढून टाकल्या आहेत.'
+          : language === 'hi'
+          ? 'एपीआई की हटाई गईं।'
+          : 'Manual API keys cleared.'
       );
     }
     onKeysChanged?.();
@@ -73,7 +80,11 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
     setSavedGemini('');
     setSavedGnani('');
     setStatusMessage(
-      language === 'hi' ? 'एपीआई की हटाई गईं।' : 'Manual API keys cleared.'
+      language === 'mr'
+        ? 'मॅन्युअल एपीआई की काढून टाकल्या आहेत.'
+        : language === 'hi'
+        ? 'एपीआई की हटाई गईं।'
+        : 'Manual API keys cleared.'
     );
     onKeysChanged?.();
   };
@@ -90,7 +101,11 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
         <div className="flex items-center gap-1.5 min-w-0">
           <KeyRound className="w-3.5 h-3.5 text-[#2F3BE0] shrink-0" aria-hidden="true" />
           <h2 className="text-xs font-medium text-ink tracking-tight">
-            {language === 'hi' ? 'एपीआई की (मैन्युअल)' : 'Manual API Keys'}
+            {language === 'mr'
+              ? 'एपीआई की (मॅन्युअल)'
+              : language === 'hi'
+              ? 'एपीआई की (मैन्युअल)'
+              : 'Manual API Keys'}
           </h2>
         </div>
 
@@ -112,7 +127,9 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
       </div>
 
       <p className="mt-2 text-[11px] text-muted leading-snug">
-        {language === 'hi'
+        {language === 'mr'
+          ? 'होस्ट केलेले अ‍ॅप चालवण्यासाठी तुमच्या Gemini आणि Gnani API की टाका.'
+          : language === 'hi'
           ? 'होस्ट किए गए ऐप को चलाने के लिए अपनी Gemini और Gnani API key दर्ज करें।'
           : 'Enter your Gemini and Gnani API keys to run Drishti AI in this hosted version.'}
       </p>
@@ -218,9 +235,13 @@ export const ManualApiKeysBox: React.FC<ManualApiKeysBoxProps> = ({
             <Check className="w-3.5 h-3.5" aria-hidden="true" />
             <span>
               {isDirty
-                ? language === 'hi'
+                ? language === 'mr'
+                  ? 'की जतन करा'
+                  : language === 'hi'
                   ? 'की सहेजें'
                   : 'Save keys'
+                : language === 'mr'
+                ? 'की जतन करा'
                 : language === 'hi'
                 ? 'की अपडेट करें'
                 : 'Save keys'}

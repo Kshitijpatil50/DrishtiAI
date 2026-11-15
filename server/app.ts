@@ -145,7 +145,18 @@ const QUESTION_MODELS = [
   'gemini-4-hydrogen',
 ];
 
-const SYSTEM_INSTRUCTION_TEMPLATE = `You are Drishti, a warm, calm, attentive human-sounding voice guide helping a blind person see and navigate with their phone camera. Speak in {LANG} (en = natural, friendly Indian English with everyday contractions like "there's" and "it's"; hi = warm everyday spoken Hindi in Devanagari, feminine first person).
+type LanguageCode = 'en' | 'hi' | 'mr';
+
+function normalizeLang(value: unknown, fallback: LanguageCode = 'en'): LanguageCode {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'mr' || normalized.startsWith('mr-') || normalized === 'marathi') return 'mr';
+  if (normalized === 'hi' || normalized.startsWith('hi-') || normalized === 'hindi') return 'hi';
+  if (normalized === 'en' || normalized.startsWith('en-') || normalized === 'english') return 'en';
+  return fallback;
+}
+
+const SYSTEM_INSTRUCTION_TEMPLATE = `You are Drishti, a warm, calm, attentive human-sounding voice guide helping a blind person see and navigate with their phone camera. Speak in {LANG} (en = natural, friendly Indian English with everyday contractions like "there's" and "it's"; hi = warm everyday spoken Hindi in Devanagari, feminine first person; mr = warm, natural everyday spoken Marathi in Devanagari, feminine first person).
 Since your reply is spoken aloud by a human voice: write short, flowing sentences as you would naturally say them in conversation — zero markdown, no lists, no emojis, write small numbers as words.
 CONVERSATION & FOLLOW-UPS: Pay attention to recent conversation turns so pronouns like "it", "that", "there", or "say that again" make immediate sense. If the user simply greets you, thanks you, or chats, answer warmly and naturally like a friend without forcing a camera rundown.
 VISUAL MEMORY & WHEREABOUTS: You may also receive earlier camera frames labeled with how many seconds ago they were seen. When the user asks where an object, landmark, door, exit, or way is, check BOTH the current live camera view AND those recent earlier frames. If it is in the current view, guide them directly. If it is not in the current view but appeared in an earlier frame, tell them clearly where it appeared relative to that view and roughly when (for example, "I saw the stairs to your left about twelve seconds ago, so try turning left"), without claiming it is directly ahead right now. If it is not in the current or recent frames, say so honestly and invite them to pan slowly.
@@ -420,6 +431,15 @@ JSON दें: {"urgency":"hazard"|"info"|"silent","speech":"...","language":"h
 - दिशा (बाएँ, दाएँ, सामने) और अनुमानित दूरी बताएं (जैसे "लगभग दो कदम आगे")।
 - अगर पहले बताई चीज़ों से कुछ खास नहीं बदला है, तो urgency "silent" और speech खाली रखें।`;
 
+const SCENE_INSTRUCTION_MR = `तुम्ही दृष्टी आहात, एका अंध व्यक्तीला मदत करणाऱ्या शांत, प्रेमळ आणि विश्वासू व्हॉइस गाइड.
+JSON द्या: {"urgency":"hazard"|"info"|"silent","speech":"...","language":"mr"}
+नियम:
+- रोजच्या साध्या, नैसर्गिक बोलचालच्या मराठीत एक किंवा दोन छोटी वाक्ये (वीस शब्दांपेक्षा कमी) बोला. मार्कडाउन, याद्या किंवा इमोजी वापरू नका.
+- कोणताही धोका (पायऱ्या, वाहन, खड्डा, अडथळा, जवळ येणारी व्यक्ती, ओली जमीन) आधी सांगा आणि urgency "hazard" ठेवा.
+- दिशा (डावीकडे, उजवीकडे, समोर) आणि अंदाजे अंतर सांगा (उदा. "अंदाजे दोन पावले समोर").
+- आधी सांगितलेल्या गोष्टींपेक्षा काहीही महत्त्वाचे बदलले नसेल, तर urgency "silent" आणि speech रिकामे ठेवा.
+- रस्ता पूर्णपणे सुरक्षित आहे असे कधीही आश्वासन देऊ नका.`;
+
 // Helper to safely parse JSON responses (stripping optional markdown fences)
 function parseModelJson<T>(rawText: string | undefined, fallback: T): T {
   if (!rawText) return fallback;
@@ -446,7 +466,8 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
   res.on('close', onClientClose);
 
   try {
-    const { imageBase64, recentNarration = [], language = 'en' } = req.body || {};
+    const { imageBase64, recentNarration = [], language: rawLanguage = 'en' } = req.body || {};
+    const reqLanguage = normalizeLang(rawLanguage, 'en');
     if (!imageBase64) {
       res.status(400).json({ error: 'imageBase64 is required' });
       return;
@@ -467,7 +488,12 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
     }
 
     const ai = getGenAIClient(apiKey);
-    const systemInstruction = language === 'hi' ? SCENE_INSTRUCTION_HI : SCENE_INSTRUCTION_EN;
+    const systemInstruction =
+      reqLanguage === 'mr'
+        ? SCENE_INSTRUCTION_MR
+        : reqLanguage === 'hi'
+        ? SCENE_INSTRUCTION_HI
+        : SCENE_INSTRUCTION_EN;
 
     const isFirstObservation = recentNarration.length === 0;
     const promptText = isFirstObservation
@@ -528,11 +554,11 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
     const parsed = parseModelJson<any>(response.text, {
       urgency: 'silent',
       speech: '',
-      language,
+      language: reqLanguage,
     });
     const normalizedUrgency =
       parsed.urgency === 'hazard' || parsed.urgency === 'info' ? parsed.urgency : 'silent';
-    const normalizedLang = parsed.language === 'hi' ? 'hi' : 'en';
+    const normalizedLang = normalizeLang(parsed.language, reqLanguage);
 
     res.json({
       urgency: normalizedUrgency,
@@ -554,7 +580,7 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
 
 // Answering User Question endpoint
 apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
-  const language: 'en' | 'hi' = req.body?.language === 'hi' ? 'hi' : 'en';
+  const language: LanguageCode = normalizeLang(req.body?.language, 'en');
   const clientAbort = new AbortController();
   const onClientClose = () => {
     if (!res.writableEnded) {
@@ -567,7 +593,12 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     const { imageBase64, question, audioBase64, history = [], recentFrames = [] } = req.body || {};
     if (!question && !audioBase64) {
       res.status(200).json({
-        speech: language === 'hi' ? 'कृपया अपना सवाल पूछिए।' : 'Please ask a question.',
+        speech:
+          language === 'mr'
+            ? 'कृपया तुमचा प्रश्न विचारा.'
+            : language === 'hi'
+            ? 'कृपया अपना सवाल पूछिए।'
+            : 'Please ask a question.',
         language,
       });
       return;
@@ -581,7 +612,9 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     if (!apiKey) {
       res.status(200).json({
         speech:
-          language === 'hi'
+          language === 'mr'
+            ? 'दृष्टीची जेमिनी एपीआई की अद्याप सेट केलेली नाही. कृपया एपीआई की बॉक्समध्ये ती टाका.'
+            : language === 'hi'
             ? 'दृष्टि का विज़न एपीआई की सेट नहीं है।'
             : "My vision service doesn't have a Gemini API key yet. Please add it in the API keys box.",
         language,
@@ -593,10 +626,15 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     const ai = getGenAIClient(apiKey);
 
     const rawQuestion = (question || '').trim();
-    const fallbackQuestion = language === 'hi' ? 'मेरे सामने क्या है?' : "What is in front of me?";
+    const fallbackQuestion =
+      language === 'mr'
+        ? 'माझ्या समोर काय आहे?'
+        : language === 'hi'
+        ? 'मेरे सामने क्या है?'
+        : 'What is in front of me?';
     const needsAudioTranscription = !rawQuestion && Boolean(audioBase64);
 
-    const langName = language === 'hi' ? 'hi' : 'en';
+    const langName = language;
     const systemInstruction = SYSTEM_INSTRUCTION_TEMPLATE.replace('{LANG}', langName);
 
     const sanitizedMemoryFrames = Array.isArray(recentFrames)
@@ -657,7 +695,7 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
     const recentTurns = (history || []).slice(-4);
     const historyText = recentTurns.length > 0 ? `Recent conversation:\n${recentTurns.map((t: any) => `${t.role === 'user' ? 'User' : 'Drishti'}: ${t.text}`).join('\n')}\n` : '';
     const promptWithHistory = needsAudioTranscription
-      ? `${historyText}Listen to the user's voice clip (English or Hindi), put their words in JSON "question" (or "${fallbackQuestion}" if unclear), and respond naturally in one or two short spoken sentences in JSON "speech", checking both the live camera view and recent earlier frames if they ask where something or a path is.`
+      ? `${historyText}Listen to the user's voice clip (English, Hindi, or Marathi), put their words in JSON "question" (or "${fallbackQuestion}" if unclear), and respond naturally in one or two short spoken sentences in JSON "speech", checking both the live camera view and recent earlier frames if they ask where something or a path is.`
       : `${historyText}User says: "${rawQuestion || fallbackQuestion}"
 ${
   imageBase64
@@ -707,8 +745,15 @@ ${
 
     if (res.writableEnded || clientAbort.signal.aborted) return;
 
+    const defaultUnclearSpeech =
+      language === 'mr'
+        ? 'मला हे नीट दिसले नाही.'
+        : language === 'hi'
+        ? 'मुझे यह समझ नहीं आया।'
+        : "I couldn't quite see that clearly.";
+
     const parsed = parseModelJson<any>(response.text, {
-      speech: language === 'hi' ? 'मुझे यह समझ नहीं आया।' : "I couldn't quite see that clearly.",
+      speech: defaultUnclearSpeech,
       language,
     });
     const resolvedQuestion =
@@ -721,10 +766,8 @@ ${
       speech:
         typeof parsed.speech === 'string' && parsed.speech.trim()
           ? parsed.speech
-          : language === 'hi'
-          ? 'मुझे यह समझ नहीं आया।'
-          : "I couldn't quite see that clearly.",
-      language: parsed.language === 'hi' ? 'hi' : 'en',
+          : defaultUnclearSpeech,
+      language: normalizeLang(parsed.language, language),
       question: resolvedQuestion,
     });
   } catch (err: any) {
@@ -737,10 +780,14 @@ ${
       );
     res.status(200).json({
       speech: isAuthError
-        ? language === 'hi'
+        ? language === 'mr'
+          ? 'माझी जेमिनी एपीआई की काम करत नाही आहे. कृपया तुमची की तपासा.'
+          : language === 'hi'
           ? 'मेरी जेमिनी एपीआई की काम नहीं कर रही है। कृपया अपनी की जांचें।'
           : "My Gemini API key wasn't accepted. Please check your Gemini API key."
-        : language === 'hi'
+        : language === 'mr'
+          ? 'माफ करा, मला आत्ता नीट दिसत नाही आहे. कृपया पुन्हा विचारा.'
+          : language === 'hi'
           ? 'माफ़ कीजिए, मैं अभी देख नहीं पा रही हूँ। कृपया दोबारा पूछें।'
           : "Sorry, I couldn't see that clearly right now. Please ask again.",
       language,
@@ -769,12 +816,15 @@ apiRouter.post('/gnani/stt', async (req: Request, res: Response) => {
       return;
     }
 
-    const { audioBase64 } = req.body || {};
+    const { audioBase64, language: rawLanguage } = req.body || {};
     if (!audioBase64) {
       res.status(400).json({ error: 'audioBase64 is required' });
       return;
     }
 
+    const sttLanguageHint = normalizeLang(rawLanguage, 'en');
+    const sttLanguageCode =
+      sttLanguageHint === 'mr' ? 'mr-IN,hi-IN,en-IN' : 'hi-IN,en-IN,mr-IN';
     const audioBuffer = Buffer.from(audioBase64, 'base64');
 
     const result = await gnaniServerQueue.enqueue(async (queueSignal) => {
@@ -782,6 +832,7 @@ apiRouter.post('/gnani/stt', async (req: Request, res: Response) => {
       let lastStatus = 500;
       let lastIsJson = true;
       let lastBody: any = { error: 'Gnani STT proxy failed' };
+      let activeLanguageCode = sttLanguageCode;
 
       for (let attempt = 0; attempt < 4; attempt++) {
         const remaining = deadlineAt - Date.now();
@@ -790,7 +841,7 @@ apiRouter.post('/gnani/stt', async (req: Request, res: Response) => {
         const formData = new FormData();
         formData.append('audio_file', new Blob([audioBuffer], { type: 'audio/wav' }), 'speech.wav');
         formData.append('model', 'prisma-v3.0');
-        formData.append('language_code', 'hi-IN,en-IN');
+        formData.append('language_code', activeLanguageCode);
         formData.append('format', 'codemix');
 
         const attemptSignal = combineAbortSignals([
@@ -819,6 +870,11 @@ apiRouter.post('/gnani/stt', async (req: Request, res: Response) => {
           lastStatus = gnaniRes.status;
           lastIsJson = isJson;
           lastBody = body;
+
+          if ((gnaniRes.status === 400 || gnaniRes.status === 422) && activeLanguageCode.includes('mr-IN')) {
+            activeLanguageCode = activeLanguageCode === 'mr-IN,hi-IN,en-IN' ? 'mr-IN' : 'hi-IN,en-IN';
+            continue;
+          }
 
           if (attempt < 3 && isGnaniTransientError(gnaniRes.status, body)) {
             const busyDelays = [450, 800, 1200];

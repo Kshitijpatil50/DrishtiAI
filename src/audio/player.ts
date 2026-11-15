@@ -5,6 +5,7 @@
 
 import { synthesizeSpeech, gnaniQueue, abortGnaniTts } from '../services/gnani';
 import { sanitizeForTTS, splitSentences, batchSentencesForTTS } from '../services/sanitize';
+import type { LanguageCode } from '../state/machine';
 
 export interface PlayerCallbacks {
   onTextPrepared?: (text: string, isNarration?: boolean) => void;
@@ -141,7 +142,7 @@ export class AudioPlayerService {
   async speak(
     rawText: string,
     options: {
-      lang?: 'en' | 'hi';
+      lang?: LanguageCode;
       isHazard?: boolean;
       isNarration?: boolean;
       requestToken: number;

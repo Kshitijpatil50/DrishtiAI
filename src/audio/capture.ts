@@ -9,6 +9,7 @@ import {
   getRequiredOnsetMs,
   getSilenceLimitMs,
 } from './vad';
+import type { LanguageCode } from '../state/machine';
 
 export interface AudioCaptureCallbacks {
   onSpeechStart: (isBargeIn: boolean) => void;
@@ -111,10 +112,10 @@ export class AudioCaptureService {
   }
 
   /**
-   * Sets the language for SpeechRecognition fallback ('en-IN' or 'hi-IN')
+   * Sets the language for SpeechRecognition fallback ('en-IN', 'hi-IN', or 'mr-IN')
    */
-  setLanguage(lang: 'en' | 'hi') {
-    this.recognitionLang = lang === 'hi' ? 'hi-IN' : 'en-IN';
+  setLanguage(lang: LanguageCode) {
+    this.recognitionLang = lang === 'mr' ? 'mr-IN' : lang === 'hi' ? 'hi-IN' : 'en-IN';
     if (this.speechRecognition) {
       try {
         this.speechRecognition.lang = this.recognitionLang;

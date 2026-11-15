@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { LanguageCode } from '../state/machine';
+
 const EN_NUMBER_WORDS: Record<string, string> = {
   '0': 'zero',
   '1': 'one',
@@ -56,6 +58,38 @@ const HI_NUMBER_WORDS: Record<string, string> = {
   '९': 'नौ',
 };
 
+const MR_NUMBER_WORDS: Record<string, string> = {
+  '0': 'शून्य',
+  '1': 'एक',
+  '2': 'दोन',
+  '3': 'तीन',
+  '4': 'चार',
+  '5': 'पाच',
+  '6': 'सहा',
+  '7': 'सात',
+  '8': 'आठ',
+  '9': 'नऊ',
+  '10': 'दहा',
+  '11': 'अकरा',
+  '12': 'बारा',
+  '15': 'पंधरा',
+  '20': 'वीस',
+  '30': 'तीस',
+  '50': 'पन्नास',
+  '100': 'शंभर',
+  // Devanagari digits ०-९
+  '०': 'शून्य',
+  '१': 'एक',
+  '२': 'दोन',
+  '३': 'तीन',
+  '४': 'चार',
+  '५': 'पाच',
+  '६': 'सहा',
+  '७': 'सात',
+  '८': 'आठ',
+  '९': 'नऊ',
+};
+
 const EN_ONES = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen',
@@ -96,6 +130,13 @@ const HI_DECIMAL_DIGITS: Record<string, string> = {
   '५': 'पाँच', '६': 'छह', '७': 'सात', '८': 'आठ', '९': 'नौ',
 };
 
+const MR_DECIMAL_DIGITS: Record<string, string> = {
+  '0': 'शून्य', '1': 'एक', '2': 'दोन', '3': 'तीन', '4': 'चार',
+  '5': 'पाच', '6': 'सहा', '7': 'सात', '8': 'आठ', '9': 'नऊ',
+  '०': 'शून्य', '१': 'एक', '२': 'दोन', '३': 'तीन', '४': 'चार',
+  '५': 'पाच', '६': 'सहा', '७': 'सात', '८': 'आठ', '९': 'नऊ',
+};
+
 const DEVANAGARI_TO_ASCII: Record<string, string> = {
   '०': '0', '१': '1', '२': '2', '३': '3', '४': '4',
   '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
@@ -108,17 +149,23 @@ function toAsciiDigits(raw: string): string {
 /**
  * Replaces numbers in text with natural spoken words according to the target language.
  */
-export function convertDigitsToWords(text: string, lang: 'en' | 'hi' = 'en'): string {
-  const dictionary = lang === 'hi' ? HI_NUMBER_WORDS : EN_NUMBER_WORDS;
+export function convertDigitsToWords(text: string, lang: LanguageCode = 'en'): string {
+  const dictionary =
+    lang === 'mr' ? MR_NUMBER_WORDS : lang === 'hi' ? HI_NUMBER_WORDS : EN_NUMBER_WORDS;
+  const decimalDict = lang === 'mr' ? MR_DECIMAL_DIGITS : HI_DECIMAL_DIGITS;
 
   // Handle decimal numbers like 1.5 -> "one point five" first
   let out = text.replace(/([0-9०-९]+)\.([0-9०-९]+)/g, (_m, wholeRaw, fracRaw) => {
     const whole = toAsciiDigits(wholeRaw);
     const frac = toAsciiDigits(fracRaw);
-    if (lang === 'hi') {
-      const wholeWord = dictionary[wholeRaw] || dictionary[whole] || whole.split('').map((d) => HI_DECIMAL_DIGITS[d] || d).join(' ');
-      const fracWords = frac.split('').map((d) => HI_DECIMAL_DIGITS[d] || d).join(' ');
-      return `${wholeWord} दशमलव ${fracWords}`;
+    if (lang === 'hi' || lang === 'mr') {
+      const wholeWord =
+        dictionary[wholeRaw] ||
+        dictionary[whole] ||
+        whole.split('').map((d) => decimalDict[d] || d).join(' ');
+      const fracWords = frac.split('').map((d) => decimalDict[d] || d).join(' ');
+      const sep = lang === 'mr' ? 'दशांश' : 'दशमलव';
+      return `${wholeWord} ${sep} ${fracWords}`;
     }
     const wholeNum = Number.parseInt(whole, 10);
     const wholeWord = Number.isNaN(wholeNum) ? whole : englishIntToWords(wholeNum);
@@ -128,13 +175,13 @@ export function convertDigitsToWords(text: string, lang: 'en' | 'hi' = 'en'): st
 
   // Replace remaining integers
   out = out.replace(/[0-9०-९]+/g, (match) => {
-    if (lang === 'hi') {
+    if (lang === 'hi' || lang === 'mr') {
       const ascii = toAsciiDigits(match);
       if (dictionary[match]) return dictionary[match];
       if (dictionary[ascii]) return dictionary[ascii];
       return match
         .split('')
-        .map((digit) => HI_DECIMAL_DIGITS[digit] || digit)
+        .map((digit) => decimalDict[digit] || digit)
         .join(' ');
     }
     const num = Number.parseInt(toAsciiDigits(match), 10);
@@ -160,7 +207,7 @@ export function convertDigitsToWords(text: string, lang: 'en' | 'hi' = 'en'): st
  * - Converts raw digits to spoken words
  * - Normalizes spacing and punctuation
  */
-export function sanitizeForTTS(rawText: string, lang: 'en' | 'hi' = 'en'): string {
+export function sanitizeForTTS(rawText: string, lang: LanguageCode = 'en'): string {
   if (!rawText) return '';
 
   let cleaned = rawText;
@@ -285,6 +332,9 @@ const ECHO_STOP_WORDS = new Set([
   // Common Hindi stop/question tokens
   'क्या', 'कहाँ', 'कौन', 'कैसे', 'है', 'हैं', 'हूँ', 'में', 'के', 'की', 'को', 'से', 'एक',
   'मेरे', 'सामने', 'बताओ', 'बताइए', 'कृपया', 'यह', 'वह', 'और',
+  // Common Marathi stop/question tokens
+  'काय', 'कुठे', 'कोठे', 'कोण', 'कसे', 'आहे', 'आहेत', 'मी', 'माझ्या', 'समोर', 'सांगा',
+  'हे', 'ते', 'आणि', 'मध्ये', 'पासून', 'वर', 'खाली',
 ]);
 
 function normalizeForEchoCheck(text: string): string {

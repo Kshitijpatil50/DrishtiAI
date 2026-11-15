@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GnaniSerialQueue, GnaniError } from './gnani';
+import {
+  GnaniSerialQueue,
+  GnaniError,
+  buildSttLanguageCode,
+  resolveSttDetectedLanguage,
+} from './gnani';
 
 test('GnaniSerialQueue executes tasks serially', async () => {
   const queue = new GnaniSerialQueue();
@@ -54,3 +59,21 @@ test('GnaniError formats object details cleanly', () => {
   const err2 = new GnaniError(429, 'Rate limit exceeded');
   assert.equal(err2.message, 'Rate limit exceeded');
 });
+
+test('Marathi STT language code building and language resolution', () => {
+  assert.equal(buildSttLanguageCode('mr'), 'mr-IN,hi-IN,en-IN');
+  assert.equal(buildSttLanguageCode('en'), 'hi-IN,en-IN,mr-IN');
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'mr-IN' }, 'माझ्या समोर काय आहे', 'en'),
+    'mr'
+  );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'hi-IN' }, 'पायऱ्या कुठे आहेत', 'mr'),
+    'mr'
+  );
+  assert.equal(
+    resolveSttDetectedLanguage({ detected_language_code: 'hi-IN' }, 'मेरे सामने क्या है', 'mr'),
+    'hi'
+  );
+});
+

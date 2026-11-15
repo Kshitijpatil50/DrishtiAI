@@ -13,6 +13,11 @@ import {
   getStoredGnaniKey,
   setStoredGnaniKey,
 } from './manualKeys';
+import {
+  detectTextLanguage,
+  normalizeLanguageCode,
+  type LanguageCode,
+} from '../state/machine';
 
 // Always route through server proxy routes (/api/gnani/*) by default so server env keys are used automatically
 export let USE_PROXY = true;
@@ -143,7 +148,27 @@ async function executeWithRetry<T>(fn: () => Promise<T>): Promise<T> {
 
 export interface SttResult {
   transcript: string;
-  detectedLanguage: 'en' | 'hi';
+  detectedLanguage: LanguageCode;
+}
+
+export function buildSttLanguageCode(preferredLanguage?: LanguageCode): string {
+  return preferredLanguage === 'mr' ? 'mr-IN,hi-IN,en-IN' : 'hi-IN,en-IN,mr-IN';
+}
+
+export function resolveSttDetectedLanguage(
+  data: any,
+  transcript: string,
+  preferredLanguage: LanguageCode = 'en'
+): LanguageCode {
+  const apiLang = normalizeLanguageCode(
+    data?.detected_language_code || data?.language_code,
+    preferredLanguage
+  );
+  if (apiLang === 'mr') return 'mr';
+  if (transcript) {
+    return detectTextLanguage(transcript, apiLang === 'hi' && preferredLanguage === 'mr' ? 'mr' : apiLang);
+  }
+  return apiLang;
 }
 
 /**
@@ -151,14 +176,15 @@ export interface SttResult {
  */
 export async function transcribeAudio(
   wavBlob: Blob,
-  activeKey?: string
+  activeKey?: string,
+  preferredLanguage?: LanguageCode
 ): Promise<SttResult> {
   return gnaniQueue.enqueue(() =>
     executeWithRetry(async () => {
       const apiKey = activeKey || getActiveManualGnaniKey();
 
       if (USE_PROXY) {
-        return await transcribeViaProxy(wavBlob, apiKey);
+        return await transcribeViaProxy(wavBlob, apiKey, preferredLanguage);
       }
       if (!apiKey) {
         throw new GnaniError(401, 'Missing Gnani API key');
@@ -168,7 +194,7 @@ export async function transcribeAudio(
         const formData = new FormData();
         formData.append('audio_file', wavBlob, 'audio.wav');
         formData.append('model', 'prisma-v3.0');
-        formData.append('language_code', 'hi-IN,en-IN');
+        formData.append('language_code', buildSttLanguageCode(preferredLanguage));
         formData.append('format', 'codemix');
 
         const headers: Record<string, string> = {};
@@ -198,10 +224,7 @@ export async function transcribeAudio(
 
         const data = await response.json();
         const rawTranscript = (data.transcript || '').trim();
-        const detected =
-          data.detected_language_code === 'hi-IN' || data.language_code === 'hi-IN'
-            ? 'hi'
-            : 'en';
+        const detected = resolveSttDetectedLanguage(data, rawTranscript, preferredLanguage);
 
         return {
           transcript: rawTranscript,
@@ -210,7 +233,7 @@ export async function transcribeAudio(
       } catch (err: any) {
         if (err instanceof TypeError || err?.name === 'TypeError') {
           USE_PROXY = true;
-          return await transcribeViaProxy(wavBlob, apiKey);
+          return await transcribeViaProxy(wavBlob, apiKey, preferredLanguage);
         }
         throw err;
       }
@@ -218,7 +241,11 @@ export async function transcribeAudio(
   );
 }
 
-async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttResult> {
+async function transcribeViaProxy(
+  wavBlob: Blob,
+  apiKey?: string,
+  preferredLanguage?: LanguageCode
+): Promise<SttResult> {
   const arrayBuffer = await wavBlob.arrayBuffer();
   const audioBase64 = bytesToBase64(new Uint8Array(arrayBuffer));
 
@@ -232,7 +259,7 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
   const response = await fetch('/api/gnani/stt', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ audioBase64 }),
+    body: JSON.stringify({ audioBase64, language: preferredLanguage }),
   });
 
   if (!response.ok) {
@@ -246,7 +273,7 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
       }
     }
     if (response.status === 404 && !contentType.includes('application/json') && apiKey) {
-      return await transcribeDirect(wavBlob, apiKey);
+      return await transcribeDirect(wavBlob, apiKey, preferredLanguage);
     }
     throw new GnaniError(
       response.status,
@@ -257,10 +284,7 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
 
   const data = await response.json();
   const rawTranscript = (data.transcript || '').trim();
-  const detected =
-    data.detected_language_code === 'hi-IN' || data.language_code === 'hi-IN'
-      ? 'hi'
-      : 'en';
+  const detected = resolveSttDetectedLanguage(data, rawTranscript, preferredLanguage);
 
   return {
     transcript: rawTranscript,
@@ -268,11 +292,15 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
   };
 }
 
-async function transcribeDirect(wavBlob: Blob, apiKey: string): Promise<SttResult> {
+async function transcribeDirect(
+  wavBlob: Blob,
+  apiKey: string,
+  preferredLanguage?: LanguageCode
+): Promise<SttResult> {
   const formData = new FormData();
   formData.append('audio_file', wavBlob, 'audio.wav');
   formData.append('model', 'prisma-v3.0');
-  formData.append('language_code', 'hi-IN,en-IN');
+  formData.append('language_code', buildSttLanguageCode(preferredLanguage));
   formData.append('format', 'codemix');
 
   const response = await fetch(`${GNANI_API_BASE}/stt/v3`, {
@@ -297,8 +325,7 @@ async function transcribeDirect(wavBlob: Blob, apiKey: string): Promise<SttResul
 
   const data = await response.json();
   const rawTranscript = (data.transcript || '').trim();
-  const detected =
-    data.detected_language_code === 'hi-IN' || data.language_code === 'hi-IN' ? 'hi' : 'en';
+  const detected = resolveSttDetectedLanguage(data, rawTranscript, preferredLanguage);
 
   return {
     transcript: rawTranscript,

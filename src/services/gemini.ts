@@ -5,6 +5,7 @@
 
 import { getActiveManualGeminiKey } from './manualKeys';
 import type { MemoryFramePayload } from '../vision/memory';
+import type { LanguageCode } from '../state/machine';
 
 // Model constant specified in single constant at the top
 export const GEMINI_MODEL = 'gemini-3.8-flash';
@@ -12,13 +13,13 @@ export const GEMINI_MODEL = 'gemini-3.8-flash';
 export interface SceneNarrationResult {
   urgency: 'hazard' | 'info' | 'silent';
   speech: string;
-  language: 'en' | 'hi';
+  language: LanguageCode;
   error?: string;
 }
 
 export interface QuestionResult {
   speech: string;
-  language: 'en' | 'hi';
+  language: LanguageCode;
   question?: string;
   error?: string;
 }
@@ -62,7 +63,7 @@ async function parseJsonResponse<T>(response: Response, label: string): Promise<
 export async function narrateScene(
   imageBase64: string,
   recentNarration: string[] = [],
-  language: 'en' | 'hi' = 'en',
+  language: LanguageCode = 'en',
   signal?: AbortSignal
 ): Promise<SceneNarrationResult> {
   const response = await fetch('/api/gemini/scene', {
@@ -92,7 +93,7 @@ export async function answerQuestion(
   question: string,
   imageBase64: string,
   history: ConversationTurn[] = [],
-  language: 'en' | 'hi' = 'en',
+  language: LanguageCode = 'en',
   signal?: AbortSignal,
   audioBase64?: string,
   recentFrames: MemoryFramePayload[] = []

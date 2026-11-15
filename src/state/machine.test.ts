@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { INITIAL_STATE, transitionState } from './machine';
+import {
+  INITIAL_STATE,
+  transitionState,
+  normalizeLanguageCode,
+  detectTextLanguage,
+} from './machine';
 
 test('transitions from IDLE to OBSERVING on START', () => {
   const s1 = transitionState(INITIAL_STATE, { type: 'START' });
@@ -81,3 +86,30 @@ test('REQUEST_FAILED safely returns from THINKING to base state', () => {
   s = transitionState(s, { type: 'REQUEST_FAILED' });
   assert.equal(s.state, 'OBSERVING');
 });
+
+test('SET_LANGUAGE supports Marathi alongside English and Hindi', () => {
+  let s = transitionState(INITIAL_STATE, { type: 'SET_LANGUAGE', language: 'mr' });
+  assert.equal(s.language, 'mr');
+  s = transitionState(s, { type: 'SET_LANGUAGE', language: 'hi' });
+  assert.equal(s.language, 'hi');
+  s = transitionState(s, { type: 'SET_LANGUAGE', language: 'en' });
+  assert.equal(s.language, 'en');
+});
+
+test('normalizeLanguageCode normalizes language variants including mr-IN', () => {
+  assert.equal(normalizeLanguageCode('mr-IN'), 'mr');
+  assert.equal(normalizeLanguageCode('Marathi'), 'mr');
+  assert.equal(normalizeLanguageCode('hi-IN'), 'hi');
+  assert.equal(normalizeLanguageCode('en-IN'), 'en');
+  assert.equal(normalizeLanguageCode('unknown', 'mr'), 'mr');
+});
+
+test('detectTextLanguage distinguishes Marathi and Hindi Devanagari and preserves fallback', () => {
+  assert.equal(detectTextLanguage('माझ्या समोर काय आहे?', 'en'), 'mr');
+  assert.equal(detectTextLanguage('पायऱ्या कुठे आहेत?', 'hi'), 'mr');
+  assert.equal(detectTextLanguage('मेरे सामने क्या है?', 'mr'), 'hi');
+  assert.equal(detectTextLanguage('दरवाजा', 'mr'), 'mr');
+  assert.equal(detectTextLanguage('दरवाजा', 'en'), 'hi');
+  assert.equal(detectTextLanguage('What is ahead?', 'mr'), 'en');
+});
+

@@ -12,7 +12,7 @@ export type AppState =
   | 'SPEAKING'
   | 'QUIET';
 
-export type LanguageCode = 'en' | 'hi';
+export type LanguageCode = 'en' | 'hi' | 'mr';
 
 export interface AssistantState {
   state: AppState;
@@ -160,3 +160,58 @@ export function transitionState(
       return current;
   }
 }
+
+export function normalizeLanguageCode(
+  value: unknown,
+  fallback: LanguageCode = 'en'
+): LanguageCode {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === 'mr' || normalized.startsWith('mr-') || normalized === 'marathi') {
+    return 'mr';
+  }
+  if (normalized === 'hi' || normalized.startsWith('hi-') || normalized === 'hindi') {
+    return 'hi';
+  }
+  if (normalized === 'en' || normalized.startsWith('en-') || normalized === 'english') {
+    return 'en';
+  }
+  return fallback;
+}
+
+const DEVANAGARI_RE = /[\u0900-\u097F]/;
+const LATIN_RE = /[A-Za-z]/;
+const MARATHI_CHAR_RE = /[\u0933\u0972\u090D\u0911\u0945\u0949]/; // ळ, ॲ, ऑ, etc.
+const MARATHI_WORD_RE =
+  /(?:^|[\s,?.!।])(आहे|आहेत|नाहीत|काय|कुठे|कोठे|कुठं|कोण|कसा|कशी|कसे|कसं|माझा|माझी|माझे|माझ्या|तुमचा|तुमची|तुमचे|तुमच्या|तुम्ही|आम्ही|मला|समोर|पाठीमागे|बाजूला|सांगा|सांग|दाखवा|दिसतं|दिसलं|दिसला|दिसली|पाहिलं|पायऱ्या|जिना|इथे|तिथे|वरती|खाली)(?=$|[\s,?.!।])/g;
+const HINDI_WORD_RE =
+  /(?:^|[\s,?.!।])(है|हैं|हूँ|कहाँ|क्या|कैसे|कैसा|कैसी|मेरा|मेरी|मेरे|नहीं|बताइए|बताओ|बताएं|दिख|रहा|रही|रहे|सामने|मुझे|यहाँ|वहाँ|आप|तुम|हम|क्यों)(?=$|[\s,?.!।])/g;
+
+export function detectTextLanguage(
+  text: string,
+  fallback: LanguageCode = 'en'
+): LanguageCode {
+  const cleaned = text.trim();
+  if (!cleaned) return fallback;
+
+  if (!DEVANAGARI_RE.test(cleaned)) {
+    if (LATIN_RE.test(cleaned)) return 'en';
+    return fallback;
+  }
+
+  let mrScore = MARATHI_CHAR_RE.test(cleaned) ? 2 : 0;
+  let hiScore = 0;
+
+  const mrMatches = cleaned.match(MARATHI_WORD_RE);
+  if (mrMatches) mrScore += mrMatches.length * 2;
+
+  const hiMatches = cleaned.match(HINDI_WORD_RE);
+  if (hiMatches) hiScore += hiMatches.length * 2;
+
+  if (mrScore > hiScore) return 'mr';
+  if (hiScore > mrScore) return 'hi';
+
+  return fallback === 'mr' || fallback === 'hi' ? fallback : 'hi';
+}
+

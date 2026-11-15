@@ -18,6 +18,11 @@ test('converts Hindi digits to spoken words', () => {
   assert.equal(convertDigitsToWords('लगभग २ कदम दूर', 'hi'), 'लगभग दो कदम दूर');
 });
 
+test('converts Marathi digits and decimals to spoken words', () => {
+  assert.equal(convertDigitsToWords('सुमारे 2 पावले पुढे', 'mr'), 'सुमारे दोन पावले पुढे');
+  assert.equal(convertDigitsToWords('सुमारे २.५ मीटर दूर', 'mr'), 'सुमारे दोन दशांश पाच मीटर दूर');
+});
+
 test('strips markdown, asterisks, and emojis', () => {
   const dirty = '⚠️ **Hazard ahead**: Watch out for 3 stairs! 🛑 *Caution*';
   const clean = sanitizeForTTS(dirty, 'en');

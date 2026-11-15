@@ -8,12 +8,14 @@ function makeThumb(val: number): Uint8Array {
   return arr;
 }
 
-test('isWhereaboutsQuery detects English, Hinglish, and Hindi whereabouts questions', () => {
+test('isWhereaboutsQuery detects English, Hinglish, Hindi, and Marathi whereabouts questions', () => {
   assert.equal(isWhereaboutsQuery('Do you know where the exit door is?'), true);
   assert.equal(isWhereaboutsQuery('Did you see my water bottle earlier?'), true);
   assert.equal(isWhereaboutsQuery('Which way are the stairs?'), true);
   assert.equal(isWhereaboutsQuery('Darwaza kahan tha?'), true);
   assert.equal(isWhereaboutsQuery('मेरा बैग कहाँ रखा है?'), true);
+  assert.equal(isWhereaboutsQuery('दरवाजा कुठे आहे?'), true);
+  assert.equal(isWhereaboutsQuery('Payrya kuthe hotya?'), true);
   assert.equal(isWhereaboutsQuery('What does this label say?'), false);
 });
 

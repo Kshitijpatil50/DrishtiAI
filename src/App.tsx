@@ -9,6 +9,7 @@ import {
   INITIAL_STATE,
   transitionState,
   LanguageCode,
+  detectTextLanguage,
 } from './state/machine';
 import { AudioCaptureService } from './audio/capture';
 import { AudioPlayerService } from './audio/player';
@@ -38,6 +39,18 @@ const GREETING_EN =
   "Hi, I'm Drishti. Ask me anything anytime, and keep using your cane carefully.";
 const GREETING_HI =
   'नमस्ते, मैं दृष्टि हूँ। कभी भी कुछ भी पूछें, और अपनी छड़ी ध्यान से इस्तेमाल करें।';
+const GREETING_MR =
+  'नमस्कार, मी दृष्टी आहे. कधीही काहीही विचारा, आणि तुमची काठी काळजीपूर्वक वापरा.';
+
+const LANGUAGE_OPTIONS: { code: LanguageCode; shortLabel: string; name: string }[] = [
+  { code: 'en', shortLabel: 'EN', name: 'English' },
+  { code: 'hi', shortLabel: 'हिं', name: 'Hindi' },
+  { code: 'mr', shortLabel: 'म', name: 'Marathi' },
+];
+
+function pickLang<T>(lang: LanguageCode, values: { en: T; hi: T; mr: T }): T {
+  return values[lang] ?? values.en;
+}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const arrayBuffer = await blob.arrayBuffer();
@@ -345,7 +358,7 @@ export default function App() {
     let detectedLang = assistantRef.current.language;
 
     try {
-      const sttResult = await transcribeAudio(wavBlob);
+      const sttResult = await transcribeAudio(wavBlob, undefined, detectedLang);
       transcript = (sttResult.transcript || '').trim();
       detectedLang = sttResult.detectedLanguage || detectedLang;
     } catch (err: any) {
@@ -355,9 +368,7 @@ export default function App() {
 
       if (cleanFallback) {
         transcript = cleanFallback;
-        if (/[\u0900-\u097F]/.test(transcript)) {
-          detectedLang = 'hi';
-        }
+        detectedLang = detectTextLanguage(transcript, detectedLang);
       } else if (err instanceof GnaniError && (err.status === 401 || err.status === 402 || err.status === 403)) {
         speakAndShowError("My voice service isn't accepting the key.");
         return;
@@ -369,9 +380,7 @@ export default function App() {
     // Also use browser SpeechRecognition fallback if Gnani STT returned HTTP 200 with empty transcript
     if (!transcript && cleanFallback) {
       transcript = cleanFallback;
-      if (/[\u0900-\u097F]/.test(transcript)) {
-        detectedLang = 'hi';
-      }
+      detectedLang = detectTextLanguage(transcript, detectedLang);
     }
 
     // Only base64-encode WAV audio for multimodal Gemini fallback if we still have no transcript
@@ -408,7 +417,13 @@ export default function App() {
     setAssistant((prev) =>
       transitionState(prev, {
         type: 'TRANSCRIPTION_SUCCESS',
-        transcript: transcript || (detectedLang === 'hi' ? 'आपका सवाल' : 'Your question'),
+        transcript:
+          transcript ||
+          pickLang(detectedLang, {
+            en: 'Your question',
+            hi: 'आपका सवाल',
+            mr: 'तुमचा प्रश्न',
+          }),
         detectedLanguage: detectedLang,
       })
     );
@@ -444,7 +459,11 @@ export default function App() {
       const finalQuestion =
         questionRes.question ||
         transcript ||
-        (detectedLang === 'hi' ? 'सामने क्या है?' : 'What is in front of me?');
+        pickLang(detectedLang, {
+          en: 'What is in front of me?',
+          hi: 'सामने क्या है?',
+          mr: 'माझ्या समोर काय आहे?',
+        });
 
       // Update conversation history
       conversationHistoryRef.current = [
@@ -475,9 +494,11 @@ export default function App() {
       if (err.name !== 'AbortError') {
         console.error('Answer question error:', err);
         speakAndShowError(
-          assistantRef.current.language === 'hi'
-            ? 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।'
-            : "I couldn't answer that right now. Please try again."
+          pickLang(assistantRef.current.language, {
+            en: "I couldn't answer that right now. Please try again.",
+            hi: 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।',
+            mr: 'माफ करा, मी आत्ता उत्तर देऊ शकत नाही. कृपया पुन्हा विचारा.',
+          })
         );
       }
     }
@@ -516,8 +537,7 @@ export default function App() {
       geminiAbortRef.current = abortController;
 
       try {
-        const isHindi = /[\u0900-\u097F]/.test(q);
-        const lang = isHindi ? 'hi' : assistantRef.current.language;
+        const lang = detectTextLanguage(q, assistantRef.current.language);
         const recentMemoryFrames = frameMemoryRef.current.selectFramesForQuestion(
           Date.now(),
           capturedFrame.thumb,
@@ -564,9 +584,11 @@ export default function App() {
         if (err.name !== 'AbortError') {
           console.error('Answer direct question error:', err);
           speakAndShowError(
-            assistantRef.current.language === 'hi'
-              ? 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।'
-              : "I couldn't answer that right now. Please try again."
+            pickLang(assistantRef.current.language, {
+              en: "I couldn't answer that right now. Please try again.",
+              hi: 'माफ़ कीजिए, मैं अभी उत्तर नहीं दे पा रही हूँ। कृपया दोबारा पूछें।',
+              mr: 'माफ करा, मी आत्ता उत्तर देऊ शकत नाही. कृपया पुन्हा विचारा.',
+            })
           );
         }
       }
@@ -672,7 +694,11 @@ export default function App() {
       }
 
       // Speak greeting (onStartSpeaking updates caption + SPEAKING state once audio starts)
-      const greeting = initialLang === 'hi' ? GREETING_HI : GREETING_EN;
+      const greeting = pickLang(initialLang, {
+        en: GREETING_EN,
+        hi: GREETING_HI,
+        mr: GREETING_MR,
+      });
       await audioPlayerRef.current?.speak(greeting, {
         lang: initialLang,
         requestToken: startToken,
@@ -727,14 +753,11 @@ export default function App() {
 
       setAssistant((prev) => transitionState(prev, { type: 'TOGGLE_QUIET' }));
 
-      const announcement =
-        currentLang === 'hi'
-          ? willBeQuiet
-            ? 'शांत मोड चालू'
-            : 'शांत मोड बंद'
-          : willBeQuiet
-          ? 'Quiet mode on'
-          : 'Quiet mode off';
+      const announcement = pickLang(currentLang, {
+        en: willBeQuiet ? 'Quiet mode on' : 'Quiet mode off',
+        hi: willBeQuiet ? 'शांत मोड चालू' : 'शांत मोड बंद',
+        mr: willBeQuiet ? 'शांत मोड सुरू' : 'शांत मोड बंद',
+      });
 
       audioPlayerRef.current?.speak(announcement, {
         lang: currentLang,
@@ -767,16 +790,44 @@ export default function App() {
   };
 
   /**
-   * Toggle language between English and Hindi
+   * Select language (English, Hindi, or Marathi)
    */
-  const toggleLanguage = (e: React.MouseEvent) => {
+  const selectLanguage = (newLang: LanguageCode, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newLang: LanguageCode = assistant.language === 'en' ? 'hi' : 'en';
     audioCaptureRef.current?.setLanguage(newLang);
     setAssistant((prev) =>
       transitionState(prev, { type: 'SET_LANGUAGE', language: newLang })
     );
   };
+
+  const renderLanguageSelector = () => (
+    <div
+      role="group"
+      aria-label="Language"
+      className="inline-flex items-center bg-white border border-line rounded-[8px] p-0.5 shrink-0"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {LANGUAGE_OPTIONS.map((opt) => {
+        const active = assistant.language === opt.code;
+        return (
+          <button
+            key={opt.code}
+            type="button"
+            onClick={(e) => selectLanguage(opt.code, e)}
+            aria-pressed={active}
+            aria-label={`Switch language to ${opt.name}`}
+            className={`text-[11px] sm:text-xs px-2 py-0.5 rounded-[6px] font-medium cursor-pointer ${
+              active
+                ? 'bg-[#2F3BE0] text-white'
+                : 'bg-transparent text-[#000000] hover:bg-gray-100'
+            }`}
+          >
+            {opt.shortLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   // Ensure video element receives the stream as soon as active screen mounts into DOM
   useEffect(() => {
@@ -806,14 +857,11 @@ export default function App() {
 
     setAssistant((prev) => transitionState(prev, { type: 'TOGGLE_QUIET' }));
 
-    const announcement =
-      currentLang === 'hi'
-        ? willBeQuiet
-          ? 'शांत मोड चालू'
-          : 'शांत मोड बंद'
-        : willBeQuiet
-        ? 'Quiet mode on'
-        : 'Quiet mode off';
+    const announcement = pickLang(currentLang, {
+      en: willBeQuiet ? 'Quiet mode on' : 'Quiet mode off',
+      hi: willBeQuiet ? 'शांत मोड चालू' : 'शांत मोड बंद',
+      mr: willBeQuiet ? 'शांत मोड सुरू' : 'शांत मोड बंद',
+    });
 
     audioPlayerRef.current?.speak(announcement, {
       lang: currentLang,
@@ -872,14 +920,7 @@ export default function App() {
           <span className="font-serif-heading text-2xl tracking-tight text-ink font-normal">
             Drishti AI
           </span>
-          <button
-            type="button"
-            onClick={toggleLanguage}
-            className="text-xs px-2.5 py-1 bg-white border border-line rounded-[8px] text-ink font-medium tracking-wide active:bg-gray-100 transition-colors cursor-pointer"
-            aria-label={`Switch language. Current: ${assistant.language === 'en' ? 'English' : 'Hindi'}`}
-          >
-            {assistant.language === 'en' ? 'EN | हि' : 'हि | EN'}
-          </button>
+          {renderLanguageSelector()}
         </header>
 
         {/* Center Prompt */}
@@ -897,14 +938,18 @@ export default function App() {
               <Orb state="OBSERVING" />
             </div>
             <h1 className="font-serif-heading text-3xl font-normal text-ink mb-2.5 leading-snug">
-              {assistant.language === 'hi'
-                ? 'शुरू करने के लिए कहीं भी टैप करें'
-                : 'Tap anywhere to start'}
+              {pickLang(assistant.language, {
+                en: 'Tap anywhere to start',
+                hi: 'शुरू करने के लिए कहीं भी टैप करें',
+                mr: 'सुरू करण्यासाठी कुठेही टॅप करा',
+              })}
             </h1>
             <p className="text-sm text-muted max-w-xs leading-relaxed">
-              {assistant.language === 'hi'
-                ? 'हैंड्स-फ़्री वॉइस कैमरा गाइड। आपके सामने क्या है बताती है और सवालों के जवाब देती है।'
-                : 'Hands-free voice camera guide. Describes what is in front of you and answers questions.'}
+              {pickLang(assistant.language, {
+                en: 'Hands-free voice camera guide. Describes what is in front of you and answers questions.',
+                hi: 'हैंड्स-फ़्री वॉइस कैमरा गाइड। आपके सामने क्या है बताती है और सवालों के जवाब देती है।',
+                mr: 'हँड्स-फ्री व्हॉइस कॅमेरा गाइड. तुमच्या समोर काय आहे ते सांगते आणि प्रश्नांची उत्तरे देते.',
+              })}
             </p>
           </button>
 
@@ -978,14 +1023,7 @@ export default function App() {
             <Activity className="w-3.5 h-3.5" aria-hidden="true" />
             <span>API</span>
           </button>
-          <button
-            type="button"
-            onClick={toggleLanguage}
-            className="text-xs px-2.5 py-1 bg-white border border-line rounded-[8px] text-ink font-medium tracking-wide active:bg-gray-100 transition-colors cursor-pointer"
-            aria-label={`Switch language. Current: ${assistant.language === 'en' ? 'English' : 'Hindi'}`}
-          >
-            {assistant.language === 'en' ? 'EN | हि' : 'हि | EN'}
-          </button>
+          {renderLanguageSelector()}
         </div>
       </header>
 
@@ -1070,9 +1108,11 @@ export default function App() {
           }`}
         >
           {assistant.lastSpokenText ||
-            (assistant.language === 'hi'
-              ? 'दृष्टि सुन रही है...'
-              : 'Drishti is right here...')}
+            pickLang(assistant.language, {
+              en: 'Drishti is right here...',
+              hi: 'दृष्टि सुन रही है...',
+              mr: 'दृष्टी ऐकत आहे...',
+            })}
         </p>
         {(interimTranscript || assistant.lastTranscript) && (
           <p className="text-xs text-muted font-sans line-clamp-1 max-w-md transition-opacity duration-150">
@@ -1094,21 +1134,28 @@ export default function App() {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              const prompt =
-                assistant.language === 'hi'
-                  ? 'मेरे सामने क्या है बताइए'
-                  : "Tell me what's in front of me";
+              const prompt = pickLang(assistant.language, {
+                en: "Tell me what's in front of me",
+                hi: 'मेरे सामने क्या है बताइए',
+                mr: 'माझ्या समोर काय आहे सांगा',
+              });
               askDirectQuestion(prompt);
             }}
             disabled={assistant.state === 'THINKING'}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-[#2F3BE0] hover:bg-[#2530c0] active:scale-[0.98] text-white text-xs sm:text-sm font-medium rounded-[8px] transition-all shadow-xs cursor-pointer disabled:opacity-50"
-            aria-label={assistant.language === 'hi' ? 'मेरे सामने क्या है बताइए' : "Tell me what's in front of me"}
+            aria-label={pickLang(assistant.language, {
+              en: "Tell me what's in front of me",
+              hi: 'मेरे सामने क्या है बताइए',
+              mr: 'माझ्या समोर काय आहे सांगा',
+            })}
           >
             <Eye className="w-4 h-4" />
             <span>
-              {assistant.language === 'hi'
-                ? 'सामने क्या है बताइए'
-                : "Tell me what's in front of me"}
+              {pickLang(assistant.language, {
+                en: "Tell me what's in front of me",
+                hi: 'सामने क्या है बताइए',
+                mr: 'माझ्या समोर काय आहे सांगा',
+              })}
             </span>
           </button>
 
@@ -1127,11 +1174,11 @@ export default function App() {
               type="text"
               value={customQuestion}
               onChange={(e) => setCustomQuestion(e.target.value)}
-              placeholder={
-                assistant.language === 'hi'
-                  ? 'या सवाल टाइप कीजिए...'
-                  : 'Or type a question...'
-              }
+              placeholder={pickLang(assistant.language, {
+                en: 'Or type a question...',
+                hi: 'या सवाल टाइप कीजिए...',
+                mr: 'किंवा प्रश्न टाइप करा...',
+              })}
               className="flex-1 text-xs px-2.5 py-1.5 bg-white border border-line rounded-[8px] text-ink focus:outline-none focus:border-[#2F3BE0] placeholder:text-gray-400"
               aria-label="Type a question for Drishti"
             />
@@ -1162,12 +1209,16 @@ export default function App() {
           aria-label={assistant.isQuiet ? 'Turn quiet mode off' : 'Turn quiet mode on'}
         >
           {assistant.isQuiet
-            ? assistant.language === 'hi'
-              ? 'शांत मोड चालू'
-              : 'Quiet: ON'
-            : assistant.language === 'hi'
-            ? 'शांत मोड'
-            : 'Quiet mode'}
+            ? pickLang(assistant.language, {
+                en: 'Quiet: ON',
+                hi: 'शांत मोड चालू',
+                mr: 'शांत मोड सुरू',
+              })
+            : pickLang(assistant.language, {
+                en: 'Quiet mode',
+                hi: 'शांत मोड',
+                mr: 'शांत मोड',
+              })}
         </button>
       </footer>
     </main>
