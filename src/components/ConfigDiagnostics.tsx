@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import {
   formatKeyDiagnostic,
@@ -13,6 +13,9 @@ import {
 
 interface ConfigDiagnosticsProps {
   compact?: boolean;
+  manualGeminiSet?: boolean;
+  manualGnaniSet?: boolean;
+  onConfigLoaded?: (config: RuntimeConfigResponse) => void;
 }
 
 function StatusIcon({ tone }: { tone: KeyBadgeTone }) {
@@ -35,10 +38,17 @@ function badgeClasses(tone: KeyBadgeTone): string {
   return 'bg-red-50 text-red-700 border-red-200';
 }
 
-export const ConfigDiagnostics: React.FC<ConfigDiagnosticsProps> = ({ compact = false }) => {
+export const ConfigDiagnostics: React.FC<ConfigDiagnosticsProps> = ({
+  compact = false,
+  manualGeminiSet = false,
+  manualGnaniSet = false,
+  onConfigLoaded,
+}) => {
   const [config, setConfig] = useState<RuntimeConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const onConfigLoadedRef = useRef(onConfigLoaded);
+  onConfigLoadedRef.current = onConfigLoaded;
 
   const checkConfig = useCallback(async () => {
     setLoading(true);
@@ -57,6 +67,7 @@ export const ConfigDiagnostics: React.FC<ConfigDiagnosticsProps> = ({ compact = 
       }
       const data = (await response.json()) as RuntimeConfigResponse;
       setConfig(data);
+      onConfigLoadedRef.current?.(data);
     } catch (err: any) {
       setError(err?.message || 'Failed to reach /api/config');
       setConfig(null);
@@ -69,10 +80,22 @@ export const ConfigDiagnostics: React.FC<ConfigDiagnosticsProps> = ({ compact = 
     checkConfig();
   }, [checkConfig]);
 
-  const geminiSummary = config
+  const geminiSummary = manualGeminiSet
+    ? {
+        label: 'Manual key',
+        tone: 'ok' as KeyBadgeTone,
+        detail: 'Using manually entered Gemini key',
+      }
+    : config
     ? formatKeyDiagnostic(config.gemini, config.hasGeminiKey)
     : null;
-  const gnaniSummary = config
+  const gnaniSummary = manualGnaniSet
+    ? {
+        label: 'Manual key',
+        tone: 'ok' as KeyBadgeTone,
+        detail: 'Using manually entered Gnani key',
+      }
+    : config
     ? formatKeyDiagnostic(config.gnani, config.hasGnaniKey)
     : null;
 

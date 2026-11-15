@@ -8,6 +8,11 @@ export const VOICE = 'Shivani';
 export const TTS_SPEED = 1.05;
 
 import { bytesToBase64 } from '../audio/wav';
+import {
+  getActiveManualGnaniKey,
+  getStoredGnaniKey,
+  setStoredGnaniKey,
+} from './manualKeys';
 
 // Always route through server proxy routes (/api/gnani/*) by default so server env keys are used automatically
 export let USE_PROXY = true;
@@ -16,29 +21,7 @@ export function setUseProxy(value: boolean) {
   USE_PROXY = value;
 }
 
-const GNANI_SESSION_STORAGE_KEY = 'drishti_gnani_api_key';
-
-/**
- * Safely retrieve the stored Gnani API key from sessionStorage
- */
-export function getStoredGnaniKey(): string {
-  try {
-    return sessionStorage.getItem(GNANI_SESSION_STORAGE_KEY) || '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Safely save Gnani API key to sessionStorage without logging
- */
-export function setStoredGnaniKey(key: string): void {
-  try {
-    sessionStorage.setItem(GNANI_SESSION_STORAGE_KEY, key.trim());
-  } catch {
-    // ignore
-  }
-}
+export { getStoredGnaniKey, setStoredGnaniKey };
 
 export class GnaniError extends Error {
   status: number;
@@ -172,7 +155,7 @@ export async function transcribeAudio(
 ): Promise<SttResult> {
   return gnaniQueue.enqueue(() =>
     executeWithRetry(async () => {
-      const apiKey = activeKey || getStoredGnaniKey();
+      const apiKey = activeKey || getActiveManualGnaniKey();
 
       if (USE_PROXY) {
         return await transcribeViaProxy(wavBlob, apiKey);
@@ -312,7 +295,7 @@ export async function synthesizeSpeech(
 ): Promise<Blob> {
   const isHazard = options?.isHazard || false;
   return gnaniQueue.enqueue(async () => {
-    const apiKey = options?.activeKey || getStoredGnaniKey();
+    const apiKey = options?.activeKey || getActiveManualGnaniKey();
     const controller = new AbortController();
     activeTtsControllers.add(controller);
     let didTimeout = false;

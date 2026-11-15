@@ -37,6 +37,22 @@ export function resolveEnvKey(
   return { value: '', raw: '', source: null };
 }
 
+export function resolveRequestKey(
+  headerValue: string | string[] | undefined,
+  envFallback: string
+): { value: string; source: 'manual-header' | 'server-env' | 'none' } {
+  const rawHeader = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  const cleanedHeader = typeof rawHeader === 'string' ? cleanEnvValue(rawHeader) : '';
+  if (cleanedHeader.length > 0) {
+    return { value: cleanedHeader, source: 'manual-header' };
+  }
+  const cleanedEnv = cleanEnvValue(envFallback || '');
+  if (cleanedEnv.length > 0) {
+    return { value: cleanedEnv, source: 'server-env' };
+  }
+  return { value: '', source: 'none' };
+}
+
 export function inspectApiKey(
   candidates: ReadonlyArray<readonly [string, string | undefined]>,
   kind: 'gemini' | 'gnani'

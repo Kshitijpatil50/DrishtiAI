@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getActiveManualGeminiKey } from './manualKeys';
+
 // Model constant specified in single constant at the top
 export const GEMINI_MODEL = 'gemini-3.8-flash';
 
@@ -10,17 +12,30 @@ export interface SceneNarrationResult {
   urgency: 'hazard' | 'info' | 'silent';
   speech: string;
   language: 'en' | 'hi';
+  error?: string;
 }
 
 export interface QuestionResult {
   speech: string;
   language: 'en' | 'hi';
   question?: string;
+  error?: string;
 }
 
 export interface ConversationTurn {
   role: 'user' | 'assistant';
   text: string;
+}
+
+function buildGeminiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const manualKey = getActiveManualGeminiKey();
+  if (manualKey) {
+    headers['X-Gemini-API-Key'] = manualKey;
+  }
+  return headers;
 }
 
 async function parseJsonResponse<T>(response: Response, label: string): Promise<T> {
@@ -51,9 +66,7 @@ export async function narrateScene(
 ): Promise<SceneNarrationResult> {
   const response = await fetch('/api/gemini/scene', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: buildGeminiHeaders(),
     body: JSON.stringify({
       imageBase64,
       recentNarration,
@@ -67,6 +80,7 @@ export async function narrateScene(
     urgency: data.urgency || 'silent',
     speech: data.speech || '',
     language: data.language || language,
+    error: data.error,
   };
 }
 
@@ -83,9 +97,7 @@ export async function answerQuestion(
 ): Promise<QuestionResult> {
   const response = await fetch('/api/gemini/question', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: buildGeminiHeaders(),
     body: JSON.stringify({
       question,
       imageBase64,
@@ -101,6 +113,7 @@ export async function answerQuestion(
     speech: data.speech || '',
     language: data.language || language,
     question: data.question,
+    error: data.error,
   };
 }
 

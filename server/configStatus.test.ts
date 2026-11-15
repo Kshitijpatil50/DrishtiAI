@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildConfigStatus, inspectApiKey, resolveEnvKey } from './configStatus';
+import {
+  buildConfigStatus,
+  inspectApiKey,
+  resolveEnvKey,
+  resolveRequestKey,
+} from './configStatus';
 
 test('inspectApiKey detects valid Gemini and Gnani keys without leaking values', () => {
   const status = buildConfigStatus({
@@ -60,4 +65,19 @@ test('buildConfigStatus reports missing keys cleanly', () => {
   assert.equal(status.runtime, 'node');
   assert.equal(status.gemini.envSource, null);
   assert.equal(status.gnani.envSource, null);
+});
+
+test('resolveRequestKey prioritizes manual header key over server env fallback', () => {
+  assert.deepEqual(
+    resolveRequestKey('  "manual-gemini-key"  ', 'broken-server-key'),
+    { value: 'manual-gemini-key', source: 'manual-header' }
+  );
+  assert.deepEqual(
+    resolveRequestKey('   ', 'server-env-key'),
+    { value: 'server-env-key', source: 'server-env' }
+  );
+  assert.deepEqual(
+    resolveRequestKey(undefined, ''),
+    { value: '', source: 'none' }
+  );
 });

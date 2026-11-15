@@ -6,7 +6,7 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import dotenv from 'dotenv';
-import { buildConfigStatus, resolveEnvKey } from './configStatus.js';
+import { buildConfigStatus, resolveEnvKey, resolveRequestKey } from './configStatus.js';
 import {
   GnaniServerQueue,
   isGnaniBusyResponse,
@@ -125,6 +125,7 @@ const SCENE_MODELS = [
   'gemini-3.5-flash-lite',
   'gemini-flash-lite-latest',
   'gemini-3.8-flash',
+  'gemini-4-hydrogen',
 ];
 
 const QUESTION_MODELS = [
@@ -441,7 +442,11 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
       return;
     }
 
-    const apiKey = getGeminiKey();
+    const resolvedGemini = resolveRequestKey(
+      req.headers['x-gemini-api-key'],
+      getGeminiKey()
+    );
+    const apiKey = resolvedGemini.value;
     if (!apiKey) {
       res.status(200).json({
         urgency: 'silent',
@@ -558,13 +563,17 @@ apiRouter.post('/gemini/question', async (req: Request, res: Response) => {
       return;
     }
 
-    const apiKey = getGeminiKey();
+    const resolvedGemini = resolveRequestKey(
+      req.headers['x-gemini-api-key'],
+      getGeminiKey()
+    );
+    const apiKey = resolvedGemini.value;
     if (!apiKey) {
       res.status(200).json({
         speech:
           language === 'hi'
-            ? 'दृष्टि का विज़न सेट नहीं है।'
-            : "My vision service isn't configured with an API key.",
+            ? 'दृष्टि का विज़न एपीआई की सेट नहीं है।'
+            : "My vision service doesn't have a Gemini API key yet. Please add it in the API keys box.",
         language,
         error: 'Missing GEMINI_API_KEY on server',
       });
@@ -676,9 +685,17 @@ ${
   } catch (err: any) {
     if (clientAbort.signal.aborted || res.writableEnded) return;
     console.error('Gemini question answering error:', err);
+    const errMsg = String(err?.message || '');
+    const isAuthError =
+      /api[_\s-]?key[_\s-]?(invalid|not valid)|permission_denied|unauthorized|\b401\b|\b403\b/i.test(
+        errMsg
+      );
     res.status(200).json({
-      speech:
-        language === 'hi'
+      speech: isAuthError
+        ? language === 'hi'
+          ? 'मेरी जेमिनी एपीआई की काम नहीं कर रही है। कृपया अपनी की जांचें।'
+          : "My Gemini API key wasn't accepted. Please check your Gemini API key."
+        : language === 'hi'
           ? 'माफ़ कीजिए, मैं अभी देख नहीं पा रही हूँ। कृपया दोबारा पूछें।'
           : "Sorry, I couldn't see that clearly right now. Please ask again.",
       language,
@@ -700,8 +717,8 @@ apiRouter.post('/gnani/stt', async (req: Request, res: Response) => {
   res.on('close', onClientClose);
 
   try {
-    const apiKey =
-      getGnaniKey() || ((req.headers['x-api-key-id'] as string) || '').trim();
+    const resolvedGnani = resolveRequestKey(req.headers['x-api-key-id'], getGnaniKey());
+    const apiKey = resolvedGnani.value;
     if (!apiKey) {
       res.status(401).json({ error: 'Missing GNANI_API_KEY on server' });
       return;
@@ -809,8 +826,8 @@ apiRouter.post('/gnani/tts', async (req: Request, res: Response) => {
   res.on('close', onClientClose);
 
   try {
-    const apiKey =
-      getGnaniKey() || ((req.headers['x-api-key-id'] as string) || '').trim();
+    const resolvedGnani = resolveRequestKey(req.headers['x-api-key-id'], getGnaniKey());
+    const apiKey = resolvedGnani.value;
     if (!apiKey) {
       res.status(401).json({ error: 'Missing GNANI_API_KEY on server' });
       return;

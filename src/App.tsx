@@ -26,6 +26,12 @@ import { transcribeAudio, GnaniError } from './services/gnani';
 import { isEchoOfAssistantSpeech, sanitizeForTTS } from './services/sanitize';
 import { Orb } from './components/Orb';
 import { ConfigDiagnostics } from './components/ConfigDiagnostics';
+import { ManualApiKeysBox } from './components/ManualApiKeysBox';
+import {
+  getBrowserDeployedFlag,
+  getStoredGeminiKey,
+  getStoredGnaniKey,
+} from './services/manualKeys';
 
 const GREETING_EN =
   "Hi, I'm Drishti. Ask me anything anytime, and keep using your cane carefully.";
@@ -45,6 +51,14 @@ export default function App() {
 
   const [customQuestion, setCustomQuestion] = useState('');
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [serverRuntime, setServerRuntime] = useState<string | undefined>(undefined);
+  const [keysRevision, setKeysRevision] = useState(0);
+
+  const isDeployed = getBrowserDeployedFlag(serverRuntime);
+  const manualGeminiSet = isDeployed && Boolean(getStoredGeminiKey());
+  const manualGnaniSet = isDeployed && Boolean(getStoredGnaniKey());
+  // Reference keysRevision so UI refreshes immediately when keys are saved or cleared
+  void keysRevision;
 
   // References to long-lived services and objects
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -794,15 +808,15 @@ export default function App() {
   if (!hasStarted) {
     return (
       <main
-        className="w-screen h-[100dvh] bg-[#F9FAFB] text-[#000000] flex flex-col justify-between p-6 select-none cursor-pointer"
+        className="w-screen h-[100dvh] bg-[#F9FAFB] text-[#000000] flex flex-col justify-between p-5 sm:p-6 select-none cursor-pointer overflow-y-auto overflow-x-hidden"
         onClick={(e) => {
           const target = e.target as HTMLElement;
-          if (target.closest('input, button, a')) return;
+          if (target.closest('input, button, a, form')) return;
           startAssistant();
         }}
       >
         {/* Header */}
-        <header className="flex items-center justify-between pt-2">
+        <header className="flex items-center justify-between pt-1 shrink-0">
           <span className="font-serif-heading text-2xl tracking-tight text-ink font-normal">
             Drishti AI
           </span>
@@ -817,20 +831,20 @@ export default function App() {
         </header>
 
         {/* Center Prompt */}
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-2 py-4">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               startAssistant();
             }}
-            className="flex flex-col items-center justify-center text-center cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2F3BE0] rounded-xl p-4"
+            className="flex flex-col items-center justify-center text-center cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2F3BE0] rounded-xl p-3"
             aria-label="Tap to start Drishti AI"
           >
-            <div className="mb-5">
+            <div className="mb-4">
               <Orb state="OBSERVING" />
             </div>
-            <h1 className="font-serif-heading text-3xl font-normal text-ink mb-3 leading-snug">
+            <h1 className="font-serif-heading text-3xl font-normal text-ink mb-2.5 leading-snug">
               {assistant.language === 'hi'
                 ? 'शुरू करने के लिए कहीं भी टैप करें'
                 : 'Tap anywhere to start'}
@@ -843,21 +857,37 @@ export default function App() {
           </button>
 
           <div
-            className="mt-4 w-full max-w-xs"
+            className="mt-3 w-full max-w-xs space-y-2.5"
             onClick={(e) => e.stopPropagation()}
           >
-            <ConfigDiagnostics compact />
+            {isDeployed && (
+              <ManualApiKeysBox
+                compact
+                language={assistant.language}
+                onKeysChanged={() => setKeysRevision((r) => r + 1)}
+              />
+            )}
+            <ConfigDiagnostics
+              compact
+              manualGeminiSet={manualGeminiSet}
+              manualGnaniSet={manualGnaniSet}
+              onConfigLoaded={(cfg) => {
+                if (cfg.runtime && cfg.runtime !== serverRuntime) {
+                  setServerRuntime(cfg.runtime);
+                }
+              }}
+            />
           </div>
 
           {errorMessage && (
-            <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-[8px] max-w-xs">
+            <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-[8px] max-w-xs">
               {errorMessage}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <footer className="text-center pb-2">
+        <footer className="text-center pb-1 shrink-0">
           <p className="text-[11px] text-muted">
             Built with Gnani Prisma and Timbre
           </p>
@@ -931,11 +961,26 @@ export default function App() {
 
       {showDiagnostics && (
         <div
-          className="fixed inset-x-0 top-12 z-30 flex justify-center px-4"
+          className="fixed inset-x-0 top-12 z-30 flex justify-center px-4 max-h-[80dvh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="w-full max-w-xs shadow-lg rounded-[10px]">
-            <ConfigDiagnostics />
+          <div className="w-full max-w-xs space-y-2.5 shadow-lg rounded-[10px]">
+            {isDeployed && (
+              <ManualApiKeysBox
+                compact
+                language={assistant.language}
+                onKeysChanged={() => setKeysRevision((r) => r + 1)}
+              />
+            )}
+            <ConfigDiagnostics
+              manualGeminiSet={manualGeminiSet}
+              manualGnaniSet={manualGnaniSet}
+              onConfigLoaded={(cfg) => {
+                if (cfg.runtime && cfg.runtime !== serverRuntime) {
+                  setServerRuntime(cfg.runtime);
+                }
+              }}
+            />
           </div>
         </div>
       )}
