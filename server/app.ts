@@ -56,19 +56,28 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
 
 export const app = express();
 
-// Middleware for parsing JSON with ample limit for base64 images
-app.use(express.json({ limit: '20mb' }));
-// Defensive fallback if a serverless runtime supplies pre-read string JSON body
-app.use((req: Request, _res: Response, next) => {
-  if (typeof req.body === 'string' && req.headers['content-type']?.includes('application/json')) {
-    try {
-      req.body = JSON.parse(req.body);
-    } catch {
-      // Leave unparsed
+// Preserve pre-parsed request bodies (e.g. Vercel @vercel/node) so express.json/raw never hang or clobber
+app.use((req: any, _res: Response, next) => {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'string' && req.headers['content-type']?.includes('application/json')) {
+      try {
+        req.body = JSON.parse(req.body);
+      } catch {
+        // Leave unparsed
+      }
+    } else if (Buffer.isBuffer(req.body) && req.headers['content-type']?.includes('application/json')) {
+      try {
+        req.body = JSON.parse(req.body.toString('utf8'));
+      } catch {
+        // Leave unparsed
+      }
     }
+    req._body = true;
   }
   next();
 });
+// Middleware for parsing JSON with ample limit for base64 images
+app.use(express.json({ limit: '20mb' }));
 // Middleware for parsing raw audio buffers
 app.use(express.raw({ type: ['audio/wav', 'audio/*', 'application/octet-stream'], limit: '20mb' }));
 
@@ -945,3 +954,19 @@ apiRouter.post('/gnani/tts', async (req: Request, res: Response) => {
 // Mount router on /api and root (supports direct and rewritten requests on Vercel)
 app.use('/api', apiRouter);
 app.use(apiRouter);
+
+/**
+ * Wraps the Express app for explicit Vercel Serverless Function files (e.g. api/gnani/tts.ts),
+ * restoring routePath if the serverless adapter strips the path prefix to "/".
+ */
+export function createVercelHandler(routePath: string) {
+  return (req: any, res: any) => {
+    const currentUrl = typeof req.url === 'string' ? req.url : '/';
+    if (currentUrl === '/' || currentUrl.startsWith('/?')) {
+      const qsIndex = currentUrl.indexOf('?');
+      const qs = qsIndex >= 0 ? currentUrl.slice(qsIndex) : '';
+      req.url = `${routePath}${qs}`;
+    }
+    return app(req, res);
+  };
+}

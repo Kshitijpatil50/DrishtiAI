@@ -236,11 +236,17 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
   });
 
   if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
     let errData: any = {};
-    try {
-      errData = await response.json();
-    } catch {
-      // ignore
+    if (contentType.includes('application/json')) {
+      try {
+        errData = await response.json();
+      } catch {
+        // ignore
+      }
+    }
+    if (response.status === 404 && !contentType.includes('application/json') && apiKey) {
+      return await transcribeDirect(wavBlob, apiKey);
     }
     throw new GnaniError(
       response.status,
@@ -255,6 +261,44 @@ async function transcribeViaProxy(wavBlob: Blob, apiKey?: string): Promise<SttRe
     data.detected_language_code === 'hi-IN' || data.language_code === 'hi-IN'
       ? 'hi'
       : 'en';
+
+  return {
+    transcript: rawTranscript,
+    detectedLanguage: detected,
+  };
+}
+
+async function transcribeDirect(wavBlob: Blob, apiKey: string): Promise<SttResult> {
+  const formData = new FormData();
+  formData.append('audio_file', wavBlob, 'audio.wav');
+  formData.append('model', 'prisma-v3.0');
+  formData.append('language_code', 'hi-IN,en-IN');
+  formData.append('format', 'codemix');
+
+  const response = await fetch(`${GNANI_API_BASE}/stt/v3`, {
+    method: 'POST',
+    headers: { 'X-API-Key-ID': apiKey },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let errData: any = {};
+    try {
+      errData = await response.json();
+    } catch {
+      // ignore
+    }
+    throw new GnaniError(
+      response.status,
+      errData?.detail || `STT failed with status ${response.status}`,
+      errData?.detail?.error_code
+    );
+  }
+
+  const data = await response.json();
+  const rawTranscript = (data.transcript || '').trim();
+  const detected =
+    data.detected_language_code === 'hi-IN' || data.language_code === 'hi-IN' ? 'hi' : 'en';
 
   return {
     transcript: rawTranscript,
@@ -457,6 +501,55 @@ async function synthesizeViaProxy(
   }
 
   if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    let errData: any = {};
+    if (contentType.includes('application/json')) {
+      try {
+        errData = await response.json();
+      } catch {
+        // ignore
+      }
+    }
+    if (response.status === 404 && !contentType.includes('application/json') && apiKey) {
+      return await synthesizeDirect(text, apiKey, signal);
+    }
+    throw new GnaniError(
+      response.status,
+      errData?.detail || errData?.error || `Proxy TTS failed with status ${response.status}`,
+      errData?.detail?.error_code
+    );
+  }
+
+  return await response.blob();
+}
+
+async function synthesizeDirect(
+  text: string,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<Blob> {
+  const response = await fetch(`${GNANI_API_BASE}/api/v1/tts/inference`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key-ID': apiKey,
+    },
+    signal,
+    body: JSON.stringify({
+      text,
+      voice: VOICE,
+      model: 'timbre-v3.0',
+      language: 'auto',
+      speed: TTS_SPEED,
+      audio_config: {
+        container: 'mp3',
+        sample_rate: 24000,
+        bitrate: '32k',
+      },
+    }),
+  });
+
+  if (!response.ok) {
     let errData: any = {};
     try {
       errData = await response.json();
@@ -465,7 +558,7 @@ async function synthesizeViaProxy(
     }
     throw new GnaniError(
       response.status,
-      errData?.detail || errData?.error || `Proxy TTS failed with status ${response.status}`,
+      errData?.detail || errData?.error || `TTS failed with status ${response.status}`,
       errData?.detail?.error_code
     );
   }
