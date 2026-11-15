@@ -4,7 +4,7 @@
  */
 
 import express, { Request, Response } from 'express';
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import { buildConfigStatus, resolveEnvKey, resolveRequestKey } from './configStatus.js';
 import {
@@ -12,6 +12,11 @@ import {
   isGnaniBusyResponse,
   isGnaniTransientError,
 } from './gnaniConcurrency.js';
+import {
+  SCENE_MODELS,
+  QUESTION_MODELS,
+  generateContentWithFallback,
+} from './geminiFallback.js';
 
 dotenv.config();
 
@@ -108,8 +113,6 @@ export function getGnaniKey(): string {
 }
 
 export const GEMINI_MODEL = 'gemini-4-hydrogen';
-let cachedSceneModel: string | null = null;
-let cachedQuestionModel: string | null = null;
 let cachedAiKey: string | null = null;
 let cachedAiClient: GoogleGenAI | null = null;
 
@@ -129,22 +132,6 @@ function getGenAIClient(apiKey: string): GoogleGenAI {
   return cachedAiClient;
 }
 
-const SCENE_MODELS = [
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-flash-lite-latest',
-  'gemini-3.8-flash',
-  'gemini-4-hydrogen',
-];
-
-const QUESTION_MODELS = [
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-flash-lite-latest',
-  'gemini-3.8-flash',
-  'gemini-4-hydrogen',
-];
-
 type LanguageCode = 'en' | 'hi' | 'mr';
 
 function normalizeLang(value: unknown, fallback: LanguageCode = 'en'): LanguageCode {
@@ -162,246 +149,6 @@ CONVERSATION & FOLLOW-UPS: Pay attention to recent conversation turns so pronoun
 VISUAL MEMORY & WHEREABOUTS: You may also receive earlier camera frames labeled with how many seconds ago they were seen. When the user asks where an object, landmark, door, exit, or way is, check BOTH the current live camera view AND those recent earlier frames. If it is in the current view, guide them directly. If it is not in the current view but appeared in an earlier frame, tell them clearly where it appeared relative to that view and roughly when (for example, "I saw the stairs to your left about twelve seconds ago, so try turning left"), without claiming it is directly ahead right now. If it is not in the current or recent frames, say so honestly and invite them to pan slowly.
 ANSWERING VISUAL QUESTIONS: Answer directly what was asked in one or two crisp, natural sentences from what you actually see. For text, labels, currency, medicine strips, or signs, read the exact words or value clearly. For distance or size, give an honest conversational estimate with "about" (e.g., "about two steps to your left"). If the view is blurry, dark, or cropped, say so gently and guide the camera ("tilt a little to your left so I can see better"). If asked to switch languages, switch cleanly and set "language".
 SCENE & SAFETY: Put any hazard first. Never promise a path is completely safe—use natural phrasing like "Looks clear right ahead, just keep using your cane." Never guess someone's identity; if unsure, say so honestly.`;
-
-function buildModelRequest(baseRequest: any, model: string, abortSignal?: AbortSignal) {
-  const config: any = {
-    ...baseRequest.config,
-  };
-  if (abortSignal) {
-    config.abortSignal = abortSignal;
-  }
-  if (!config.thinkingConfig) {
-    if (model.startsWith('gemini-4')) {
-      config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-    } else if (model.startsWith('gemini-3')) {
-      config.thinkingConfig = {
-        thinkingLevel: model.includes('lite') ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW,
-      };
-    }
-  }
-  return {
-    ...baseRequest,
-    model,
-    config,
-  };
-}
-
-interface FallbackOptions {
-  totalBudgetMs?: number;
-  models?: string[];
-  hedge?: boolean;
-  cacheKey?: 'scene' | 'question';
-  signal?: AbortSignal;
-}
-
-/**
- * Resilient Gemini call with sequential/hedged fallback across available flash models,
- * bounded within a strict total budget so Vercel serverless functions never 504.
- */
-async function generateContentWithFallback(
-  ai: GoogleGenAI,
-  baseRequest: any,
-  options: FallbackOptions = {}
-) {
-  const {
-    totalBudgetMs = 9500,
-    models = QUESTION_MODELS,
-    hedge = true,
-    cacheKey = 'question',
-    signal,
-  } = options;
-
-  const cached = cacheKey === 'scene' ? cachedSceneModel : cachedQuestionModel;
-  const setCached = (val: string | null) => {
-    if (cacheKey === 'scene') cachedSceneModel = val;
-    else cachedQuestionModel = val;
-  };
-
-  const modelsToTry = Array.from(new Set(cached ? [cached, ...models] : models));
-  const attemptErrors: string[] = [];
-  const deadline = Date.now() + totalBudgetMs;
-
-  const trySingleModel = (
-    model: string,
-    timeoutMs: number,
-    waveAbort?: AbortController
-  ): Promise<{ model: string; res: any }> =>
-    new Promise((resolve, reject) => {
-      if (signal?.aborted) {
-        reject(new DOMException('Aborted', 'AbortError'));
-        return;
-      }
-
-      const attemptController = new AbortController();
-      const forwardOuterAbort = () => attemptController.abort(signal?.reason);
-      const forwardWaveAbort = () => attemptController.abort(waveAbort?.signal.reason);
-      signal?.addEventListener('abort', forwardOuterAbort, { once: true });
-      waveAbort?.signal.addEventListener('abort', forwardWaveAbort, { once: true });
-
-      const cleanupListeners = () => {
-        signal?.removeEventListener('abort', forwardOuterAbort);
-        waveAbort?.signal.removeEventListener('abort', forwardWaveAbort);
-      };
-
-      const timer = setTimeout(() => {
-        attemptController.abort();
-        cleanupListeners();
-        reject(new Error(`${model}: timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      const req = buildModelRequest(baseRequest, model, attemptController.signal);
-      ai.models
-        .generateContent(req)
-        .then((res) => {
-          clearTimeout(timer);
-          cleanupListeners();
-          resolve({ model, res });
-        })
-        .catch((err: any) => {
-          clearTimeout(timer);
-          cleanupListeners();
-          if (signal?.aborted) {
-            reject(new DOMException('Aborted', 'AbortError'));
-            return;
-          }
-          const msg = err?.message || String(err);
-          reject(new Error(`${model}: ${msg}`));
-        });
-    });
-
-  if (!hedge) {
-    // Sequential fallback for background scene checks (avoids 2x quota usage)
-    for (const model of modelsToTry) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 500) break;
-      const perAttemptMs = Math.min(4800, remainingMs);
-      try {
-        const { model: used, res } = await trySingleModel(model, perAttemptMs);
-        setCached(used);
-        return res;
-      } catch (err: any) {
-        if (err?.name === 'AbortError' || signal?.aborted) throw err;
-        if ((cacheKey === 'scene' ? cachedSceneModel : cachedQuestionModel) === model) {
-          setCached(null);
-        }
-        const msg = err?.message || String(err);
-        attemptErrors.push(msg);
-        console.warn('[Gemini]', msg);
-      }
-    }
-    throw new Error(attemptErrors.join(' | ') || 'All Gemini models timed out');
-  }
-
-  // Hedged fallback for interactive user questions: launch backup after 1.8s or early failure
-  let idx = 0;
-  while (idx < modelsToTry.length) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 500) break;
-
-    const primaryModel = modelsToTry[idx++];
-    const backupModel = idx < modelsToTry.length ? modelsToTry[idx++] : null;
-
-    if (!backupModel) {
-      try {
-        const { model, res } = await trySingleModel(primaryModel, remainingMs);
-        setCached(model);
-        return res;
-      } catch (err: any) {
-        if (err?.name === 'AbortError' || signal?.aborted) throw err;
-        if ((cacheKey === 'scene' ? cachedSceneModel : cachedQuestionModel) === primaryModel) {
-          setCached(null);
-        }
-        attemptErrors.push(err?.message || String(err));
-        console.warn('[Gemini]', err?.message || err);
-        continue;
-      }
-    }
-
-    const res = await new Promise<any>((resolve, reject) => {
-      let settled = false;
-      let backupStarted = false;
-      let pending = 1;
-      let hedgeTimer: NodeJS.Timeout | null = null;
-      const waveAbort = new AbortController();
-
-      const onFailure = (modelName: string, err: any) => {
-        if (signal?.aborted || err?.name === 'AbortError') {
-          if (!settled) {
-            settled = true;
-            if (hedgeTimer) clearTimeout(hedgeTimer);
-            waveAbort.abort();
-            reject(err);
-          }
-          return;
-        }
-        const errMsg = err?.message || String(err);
-        if ((cacheKey === 'scene' ? cachedSceneModel : cachedQuestionModel) === modelName) {
-          setCached(null);
-        }
-        attemptErrors.push(errMsg);
-        console.warn('[Gemini]', errMsg);
-        pending--;
-        if (!backupStarted) {
-          startBackup();
-          return;
-        }
-        if (pending === 0 && !settled) {
-          settled = true;
-          if (hedgeTimer) clearTimeout(hedgeTimer);
-          reject(new Error('wave_failed'));
-        }
-      };
-
-      const startBackup = () => {
-        if (backupStarted || settled) return;
-        backupStarted = true;
-        const left = deadline - Date.now();
-        if (left <= 500) {
-          if (pending === 0 && !settled) {
-            settled = true;
-            reject(new Error('wave_timeout'));
-          }
-          return;
-        }
-        pending++;
-        trySingleModel(backupModel, Math.min(5000, left), waveAbort)
-          .then(({ model, res: r }) => {
-            if (!settled) {
-              settled = true;
-              if (hedgeTimer) clearTimeout(hedgeTimer);
-              waveAbort.abort();
-              setCached(model);
-              resolve(r);
-            }
-          })
-          .catch((e: any) => onFailure(backupModel, e));
-      };
-
-      hedgeTimer = setTimeout(startBackup, 1600);
-
-      trySingleModel(primaryModel, Math.min(5000, remainingMs), waveAbort)
-        .then(({ model, res: r }) => {
-          if (!settled) {
-            settled = true;
-            if (hedgeTimer) clearTimeout(hedgeTimer);
-            waveAbort.abort();
-            setCached(model);
-            resolve(r);
-          }
-        })
-        .catch((e: any) => onFailure(primaryModel, e));
-    }).catch((err: any) => {
-      if (err?.name === 'AbortError' || signal?.aborted) throw err;
-      return null;
-    });
-
-    if (res) return res;
-  }
-
-  throw new Error(attemptErrors.join(' | ') || 'All Gemini models timed out');
-}
 
 const apiRouter = express.Router();
 
@@ -541,7 +288,8 @@ apiRouter.post('/gemini/scene', async (req: Request, res: Response) => {
         },
       },
       {
-        totalBudgetMs: 10000,
+        totalBudgetMs: 14000,
+        attemptTimeoutMs: 8000,
         models: SCENE_MODELS,
         hedge: false,
         cacheKey: 'scene',
@@ -735,7 +483,9 @@ ${
         },
       },
       {
-        totalBudgetMs: 11000,
+        totalBudgetMs: 20000,
+        attemptTimeoutMs: 12000,
+        hedgeDelayMs: 3500,
         models: QUESTION_MODELS,
         hedge: true,
         cacheKey: 'question',

@@ -8,7 +8,7 @@ import type { MemoryFramePayload } from '../vision/memory';
 import type { LanguageCode } from '../state/machine';
 
 // Model constant specified in single constant at the top
-export const GEMINI_MODEL = 'gemini-3.8-flash';
+export const GEMINI_MODEL = 'gemini-4-hydrogen';
 
 export interface SceneNarrationResult {
   urgency: 'hazard' | 'info' | 'silent';
