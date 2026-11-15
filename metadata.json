@@ -1,0 +1,11 @@
+{
+  "name": "Remix Drishti AI",
+  "description": "A hands-free, voice-first camera assistant for blind and low-vision users with proactive scene narration, hazard warnings, and bilingual English/Hindi voice interaction.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #F9FAFB;
+  --ink: #000000;
+  --muted: #6B7280;
+  --line: #E6E6E6;
+  --accent: #2F3BE0;
+  --blue: #3898EC;
+  --blue-2: #0082F3;
+  --cream: #FCF7F2;
+  --font-serif: "Gambarino", "Instrument Serif", Georgia, serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.font-serif-heading {
+  font-family: var(--font-serif);
+}
+
+.bg-cream {
+  background-color: var(--cream);
+}
+
+.border-line {
+  border-color: var(--line);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.text-ink {
+  color: var(--ink);
+}
+
+.bg-accent {
+  background-color: var(--accent);
+}
+
+/* Animations for Voice Orb */
+@keyframes orb-breathe {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes orb-pulse {
+  0%, 100% {
+    transform: scale(0.94);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.08);
+    filter: brightness(1.1);
+  }
+}
+
+@keyframes orb-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-orb-breathe {
+  animation: orb-breathe 3.5s ease-in-out infinite;
+}
+
+.animate-orb-pulse {
+  animation: orb-pulse 1.2s ease-in-out infinite;
+}
+
+.animate-orb-shimmer {
+  background-size: 200% 200%;
+  animation: orb-shimmer 2s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
