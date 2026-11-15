@@ -795,6 +795,22 @@ export default function App() {
     }
   }, [hasStarted]);
 
+  // Detect server runtime (e.g., vercel vs node) once on mount for deployed-mode detection
+  useEffect(() => {
+    let active = true;
+    fetch('/api/config', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data && typeof data.runtime === 'string') {
+          setServerRuntime(data.runtime);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Offline / Online listeners
   useEffect(() => {
     const handleOffline = () => {
@@ -856,28 +872,18 @@ export default function App() {
             </p>
           </button>
 
-          <div
-            className="mt-3 w-full max-w-xs space-y-2.5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {isDeployed && (
+          {isDeployed && (
+            <div
+              className="mt-3 w-full max-w-xs space-y-2.5"
+              onClick={(e) => e.stopPropagation()}
+            >
               <ManualApiKeysBox
                 compact
                 language={assistant.language}
                 onKeysChanged={() => setKeysRevision((r) => r + 1)}
               />
-            )}
-            <ConfigDiagnostics
-              compact
-              manualGeminiSet={manualGeminiSet}
-              manualGnaniSet={manualGnaniSet}
-              onConfigLoaded={(cfg) => {
-                if (cfg.runtime && cfg.runtime !== serverRuntime) {
-                  setServerRuntime(cfg.runtime);
-                }
-              }}
-            />
-          </div>
+            </div>
+          )}
 
           {errorMessage && (
             <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-[8px] max-w-xs">
