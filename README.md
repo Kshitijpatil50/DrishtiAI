@@ -214,7 +214,7 @@ npm start       # production Express server
 
 ## Credits
 
-Built by **[Kshitij Patil](https://github.com/Kshitijpatil50)** for the **Gnani.ai Great Indian AI Internship Challenge**.
+Built by **[Kshitij Patil](https://github.com/Kshitijpatil50)** and Khushi kumari for the **Gnani.ai Great Indian AI Internship Challenge**.
 
 Voice by **Gnani.ai** (Prisma v3.0 and Timbre v3.0). Vision and reasoning by **Google Gemini**.
 
